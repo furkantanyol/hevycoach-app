@@ -46,6 +46,33 @@ npx expo run:ios
 Set `organization` and `project` on the `@sentry/react-native/expo` plugin in
 `app.json` before the first production build; they are placeholders today.
 
+## Offline sync
+
+Workout history lives in SQLite (Drizzle). A first run backfills every page of history and is
+resumable: the page number is committed before the next page is fetched. After that, sync is a
+delta against Hevy's `workouts/events` cursor, applying updates and tombstones in one transaction
+and advancing the cursor only once that transaction commits.
+
+Writes go the other way through an outbox table, oldest first, one at a time. A failure stops the
+queue rather than letting a later write overtake it, and each retry backs off exponentially with
+jitter. The outbox is a table rather than TanStack Query's paused mutations because paused
+mutations cannot resume after an app restart without a registered default mutation function, and
+surviving a restart is the whole point. See `docs/adr/0002-offline-sync.md`.
+
+### Airplane-mode demo
+
+On a physical device with a development build:
+
+1. Settings, paste the Hevy API key, Save.
+2. Sync, **Sync now**. Workout and set counts climb, the backfill page advances, the cursor fills in.
+3. Turn on Airplane Mode. The network line flips to Offline.
+4. Pick a routine, type a new title, **Queue rename**. The name changes locally and Queued goes to 1.
+5. **Sync now** while offline. It reports that nothing was lost, Queued stays 1, no retry is spent.
+6. Force-quit and relaunch. Queued is still 1.
+7. Airplane Mode off, **Sync now**. Queued drops to 0 and the routine is renamed in Hevy.
+
+Routine writes are prefixed `[TEST]` on purpose while the app is under construction.
+
 ## Health export
 
 Open **Settings**, paste your Hevy API key (it is stored in the keychain and
