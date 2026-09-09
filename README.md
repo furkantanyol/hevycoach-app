@@ -1,56 +1,57 @@
-# Welcome to your Expo app 👋
+# HevyCoach
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Hevy data in, next week's routines out. Phase A is the foundation: your Hevy
+history is pulled with the [Hevy client](https://www.npmjs.com/package/@furkantanyol/hevy-client)
+and exported into Apple Health through a local Expo Module, idempotently.
 
-## Get started
+## Stack
 
-1. Install dependencies
+- Expo SDK 57, React Native 0.86, New Architecture, Expo Router (`src/app/`)
+- TypeScript strict, pnpm
+- `modules/health-export` — a local Expo Module writing workouts to HealthKit
+  with `HKWorkoutBuilder` (see [ADR 0001](docs/adr/0001-expo-module-over-turbo-module.md))
+- zustand + `expo-sqlite/kv-store` for settings, `expo-secure-store` for the API key
+- Sentry, EAS Build and EAS Update
 
-   ```bash
-   npm install
-   ```
+## Getting started
 
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
-
-```bash
-npm run reset-project
+```sh
+pnpm install
+pnpm validate   # lint + typecheck + test
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+The app contains a local native module, so Expo Go will not run it. Build a
+development client:
 
-### Other setup steps
+```sh
+eas build --profile development --platform ios
+npx expo start --dev-client
+```
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+Or build locally against a simulator:
 
-## Learn more
+```sh
+npx expo run:ios
+```
 
-To learn more about developing your project with Expo, look at the following resources:
+`ios/` and `android/` are generated (CNG) and not committed.
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+## Environment
 
-## Join the community
+| Variable | Purpose |
+| --- | --- |
+| `EXPO_PUBLIC_SENTRY_DSN` | Enables Sentry. Sentry stays disabled when unset, which is the normal local-dev case. |
+| `SENTRY_AUTH_TOKEN` | EAS secret, used only to upload source maps during a build. |
 
-Join our community of developers creating universal apps.
+Set `organization` and `project` on the `@sentry/react-native/expo` plugin in
+`app.json` before the first production build; they are placeholders today.
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+## Health export
+
+Open **Settings**, paste your Hevy API key (it is stored in the keychain and
+never logged), turn on **Export to Apple Health** and run the export. The last
+10 workouts are mapped and handed to the native module, which skips anything
+already in Apple Health at the same or a newer version, so re-running is safe.
+
+HealthKit only writes on a real device — on the simulator the module reports
+itself available but saves will fail.
