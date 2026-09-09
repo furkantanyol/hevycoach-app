@@ -95,7 +95,7 @@ function describeStatus({ healthAvailable, status, result, error }: StatusDescri
   if (status === 'done' && result) {
     return `Saved ${result.saved}, skipped ${result.skipped}, failed ${result.failed}.`;
   }
-  return 'Already-exported workouts are skipped unless they changed in Hevy.';
+  return 'Already-exported workouts are skipped unless they changed in Hevy. Energy is an estimate.';
 }
 
 const styles = StyleSheet.create({
