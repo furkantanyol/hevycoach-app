@@ -50,7 +50,8 @@
           "organization": "SENTRY_ORG_PLACEHOLDER",
           "project": "SENTRY_PROJECT_PLACEHOLDER"
         }
-      ]
+      ],
+      "@sentry/react-native"
     ],
     "experiments": {
       "typedRoutes": true,
