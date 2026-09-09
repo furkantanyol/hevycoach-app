@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "d0b055d4-e2d2-4c84-9127-07f7ff98e13a",
+  "id": "106773f7-1123-4155-af0e-328163448e26",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "exercise_templates": {
@@ -157,13 +157,6 @@
         "folderId": {
           "name": "folderId",
           "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "notes": {
-          "name": "notes",
-          "type": "text",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false

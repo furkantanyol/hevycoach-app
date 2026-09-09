@@ -79,16 +79,13 @@ describe('toRoutineRow', () => {
     expect(toRoutineRow(routine).exercises).toEqual(routine.exercises);
   });
 
-  it('should leave notes null when Hevy does not send any', () => {
-    expect(toRoutineRow(buildRoutine()).notes).toBeNull();
-  });
 });
 
 describe('toRoutineUpdateInput', () => {
   it('should drop the fields the update body does not accept', () => {
     const input = toRoutineUpdateInput(toRoutineRow(buildRoutine()));
 
-    expect(input.exercises?.[0]).toEqual({
+    expect(input.exercises?.[0]).toStrictEqual({
       exercise_template_id: '05293BCA',
       superset_id: null,
       rest_seconds: 90,
@@ -107,7 +104,7 @@ describe('toRoutineUpdateInput', () => {
     });
   });
 
-  it('should omit notes entirely rather than clearing a note it never saw', () => {
+  it('should send no notes, because the read model never gives us one', () => {
     expect(toRoutineUpdateInput(toRoutineRow(buildRoutine()))).not.toHaveProperty('notes');
   });
 });

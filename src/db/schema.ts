@@ -73,11 +73,11 @@ export const exerciseTemplates = sqliteTable('exercise_templates', {
   isCustom: integer({ mode: 'boolean' }).notNull(),
 });
 
+/** Hevy's routine payload has no `notes`, so there is no column for one — see ADR 0002. */
 export const routines = sqliteTable('routines', {
   id: text().primaryKey(),
   title: text().notNull(),
   folderId: integer(),
-  notes: text(),
   /** Routine children stay JSON: nothing queries inside them and updates PUT the whole routine. */
   exercises: text({ mode: 'json' }).$type<RoutineExercise[]>().notNull(),
   createdAt: integer({ mode: 'timestamp_ms' }).notNull(),
@@ -86,6 +86,8 @@ export const routines = sqliteTable('routines', {
 
 /** Local writes waiting to reach Hevy. Routine updates are the only write the app makes today. */
 export const outbox = sqliteTable('outbox', {
+  /** `autoIncrement` is load-bearing: a plain rowid is reused after a delete, and coalescing
+   *  deletes then re-inserts, which would put the re-edited row back at the head of the queue. */
   id: integer().primaryKey({ autoIncrement: true }),
   entityType: text().$type<'routine'>().notNull(),
   entityId: text().notNull(),

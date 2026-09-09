@@ -24,7 +24,6 @@ CREATE TABLE `routines` (
 	`id` text PRIMARY KEY NOT NULL,
 	`title` text NOT NULL,
 	`folderId` integer,
-	`notes` text,
 	`exercises` text NOT NULL,
 	`createdAt` integer NOT NULL,
 	`updatedAt` integer NOT NULL

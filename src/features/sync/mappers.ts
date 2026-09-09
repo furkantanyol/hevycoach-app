@@ -89,9 +89,6 @@ export function toRoutineRow(routine: Routine): RoutineRow {
     id: routine.id,
     title: routine.title,
     folderId: routine.folder_id,
-    // Hevy's documented routine payload carries no `notes`, only the update body does. Read it
-    // defensively so we keep one if the API sends it, and never invent one if it does not.
-    notes: 'notes' in routine && typeof routine.notes === 'string' ? routine.notes : null,
     exercises: routine.exercises,
     createdAt: new Date(routine.created_at),
     updatedAt: new Date(routine.updated_at),
@@ -101,12 +98,14 @@ export function toRoutineRow(routine: Routine): RoutineRow {
 /**
  * The update body is a different shape from the routine Hevy returns: it drops `index`, `title` and
  * per-set `rpe`, so the fields are copied across explicitly rather than passed through.
+ *
+ * Hevy's read model has no routine-level `notes` even though the update body accepts one, so a
+ * rename cannot round-trip a note and this replacement may clear it. Stated, not solved.
  */
 export function toRoutineUpdateInput(routine: RoutineRow): UpdateRoutineInput {
   return {
     title: routine.title,
     folder_id: routine.folderId,
-    ...(routine.notes === null ? {} : { notes: routine.notes }),
     exercises: routine.exercises.map((exercise) => ({
       exercise_template_id: exercise.exercise_template_id,
       superset_id: exercise.superset_id,
