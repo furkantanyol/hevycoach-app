@@ -48,8 +48,9 @@ Two mechanisms a neighbouring app could not truthfully claim without doing the s
 - **Hevy stays the logger.** The user logs sets in Hevy during the session. HevyCoach never captures
   a set. Today is a read surface consulted between sets, so it must be one-handed and glanceable, and
   it must never compete for the set-logging moment.
-- **Gyms have bad signal.** Offline-first sync already exists; Today must be fully usable with no
-  network, from local SQLite.
+- **Gyms have bad signal.** Today must be fully usable with no network. It is served from the
+  generated block plus React Query's persisted cache, not from a device-side mirror of the history
+  — see the 2026-09-09 amendment to ADR 0002 for the measurements that settled that.
 - **The rhythm is weekly.** Sessions across the week, regeneration triggered after the last session
   of a week, at most two informational push notifications per week.
 - **Writes go back to Hevy as routines**, currently prefixed `[TEST]` until the user lifts that guard.
@@ -92,8 +93,9 @@ Explicitly undecided, and not to be invented:
 - The user's real Hevy history: 275 workouts logged as of 2026-09-09, four routines in one folder,
   and body measurements including weight and body fat. This is the input the coaching is judged on.
 - A live Hevy Pro account and API key, kept in a gitignored `.env`.
-- Shipped and working: `@furkantanyol/hevy-client@1.0.0` and `hevy-coach@1.0.0` on npm, the offline
-  sync engine with 62 passing tests, and a HealthKit export verified on a physical device.
+- Shipped and working: `@furkantanyol/hevy-client@1.0.0` and `hevy-coach@1.0.0` on npm, and a
+  HealthKit export verified on a physical device. The offline sync engine was built, measured and
+  deleted (ADR 0002 amendment).
 - Hevy screenshots supplied as craft reference (statistics, exercise detail, active workout).
 
 No customers, testimonials, benchmarks, press, pricing or deployment claims exist. Future work must

@@ -186,3 +186,62 @@ because a guard for a field the API never sends is a guard that never runs.
   which is the right call while nothing has shipped; from the first real install
   onward, add a migration instead. The tests cannot catch this: they execute the
   `.sql` files directly and never go through the migrator.
+
+---
+
+## Amendment, 2026-09-09: reversed. The mirror is deleted.
+
+- Status of the decision above: **superseded**. Everything it describes was built,
+  tested and then removed. It is kept because a decision that was measured and
+  reversed is worth more than the code was.
+
+### What was measured
+
+The premise above is that reads must never touch the network. Measuring it
+against the API it was replacing did not support that:
+
+- `GET /exercise_history/{templateId}` is **unpaginated**. One request returns an
+  exercise's entire history. Per-exercise depth is free; only breadth across
+  many exercises costs requests — and no screen asks for breadth.
+- Week review from the network is **1 request, 642 ms**. Lift detail is **1
+  request, 318 ms**.
+- The program is generated weekly, online, on wifi. Everything the Today screen
+  needs offline can be baked into the generated block at that moment, so Today
+  never needs a history mirror at all.
+- `src/lib/query-client.ts` already configures TanStack Query with
+  `networkMode: 'offlineFirst'` and an AsyncStorage persister over
+  `expo-sqlite/kv-store`. That is the same offline guarantee the mirror was
+  hand-rolling, in a dependency the app already has.
+
+So the mirror bought one thing the alternative did not: durability of an offline
+*write* across a process kill, which is what the outbox section above argues for
+at length. Against 276 workouts and 5,927 sets of relational schema, a resumable
+backfill, a cursor delta, tombstones, and a backoff ladder, that is not a trade
+worth making before a single screen exists that writes offline.
+
+### What replaced it
+
+- `src/features/hevy/client.ts` — one `@furkantanyol/hevy-client` per API key,
+  memoized so every hook shares its in-memory GET cache.
+- `src/features/hevy/queries.ts` — TanStack Query hooks with a `staleTime` per
+  resource. React Query's persister is the offline cache; nothing caches on top
+  of it.
+- `src/features/coach/weekly-context.ts` — the weekly summary, now a pure
+  function over an array of workouts, fed by `useRecentWorkouts`.
+
+### What was given up, knowingly
+
+- **Durable offline writes.** A routine write now lives in React Query's mutation
+  lifecycle, which does not survive a process kill (the reason the outbox existed
+  is quoted above and still holds). Nothing in the app writes offline today. When
+  something does, the choice is `setMutationDefaults` before hydration or an
+  outbox again — and this ADR is the record of what an outbox costs.
+- **Relational queries over the whole history.** Sets per muscle group per week
+  are now computed in JS over a fetched window rather than by SQLite over
+  everything. If a screen ever needs an aggregate across all 276 workouts at
+  once, that is the measurement that would reopen this.
+- The backfill's known page-shift gap, the foreign-key pragma, the cursor
+  watermark and the migration-regeneration hazard all stop being live concerns.
+  They are left documented above because they are true of the approach, not of
+  this repo, and whoever reaches for a device-side mirror next should read them
+  first.
