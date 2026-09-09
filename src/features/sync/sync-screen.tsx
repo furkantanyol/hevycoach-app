@@ -42,6 +42,11 @@ export default function SyncScreen() {
           />
           <Row label="Cursor" value={state?.workoutsCursor ?? 'not set'} />
           <Row label="Last sync" value={state?.lastSyncAt?.toISOString() ?? 'never'} />
+          {state?.lastError ? (
+            <ThemedText type="small" themeColor="textSecondary">
+              {state.lastError}
+            </ThemedText>
+          ) : null}
         </View>
 
         <Button title="Sync now" onPress={() => run()} disabled={status === 'pending'} />
@@ -53,7 +58,8 @@ export default function SyncScreen() {
         <View style={styles.section}>
           <ThemedText type="subtitle">Outbox</ThemedText>
           <Row label="Pending" value={String(counts.pendingWrites)} />
-          <Row label="Retrying" value={String(counts.failedWrites)} />
+          <Row label="Retrying" value={String(counts.retryingWrites)} />
+          <Row label="Given up" value={String(counts.deadWrites)} />
           {counts.lastWriteError ? (
             <ThemedText type="small" themeColor="textSecondary">
               {counts.lastWriteError}
@@ -92,7 +98,9 @@ function describeSync({ status, summary, error }: SyncDescription): string {
     return 'Offline — nothing was lost, the queue and cursors are untouched.';
   }
   if (summary) {
-    return `Sent ${summary.sent}, updated ${summary.workoutsUpserted}, removed ${summary.workoutsDeleted}.`;
+    const backfill = summary.backfillDone ? '' : ' — history still backfilling';
+
+    return `Sent ${summary.sent}, updated ${summary.workoutsUpserted}, removed ${summary.workoutsDeleted}.${backfill}`;
   }
 
   return 'Pull your Hevy history down and push queued writes back up.';

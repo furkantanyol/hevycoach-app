@@ -2,30 +2,50 @@ import { createHevyClient } from '@furkantanyol/hevy-client';
 import { useMutation } from '@tanstack/react-query';
 import { count } from 'drizzle-orm';
 import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
+import { useMemo } from 'react';
 
 import { MAX_ATTEMPTS } from './backoff';
 import { runSync } from './sync-service';
 
 import { useDatabase } from '@/db/provider';
-import { outbox, routines, sets, syncState, workouts } from '@/db/schema';
+import { outbox, routines, sets, syncState, workouts, type SyncDatabase } from '@/db/schema';
 import { getApiKey } from '@/features/settings/api-key';
 
-/** Counts read straight from SQLite, refreshed by drizzle whenever a sync writes rows. */
+type Totals = {
+  workouts: number;
+  sets: number;
+  routines: number;
+};
+
+function readTotals(db: SyncDatabase): Totals {
+  return {
+    workouts: db.select({ value: count() }).from(workouts).get()?.value ?? 0,
+    sets: db.select({ value: count() }).from(sets).get()?.value ?? 0,
+    routines: db.select({ value: count() }).from(routines).get()?.value ?? 0,
+  };
+}
+
+/**
+ * Live counts, but not row-by-row live. SQLite's change hook fires once per changed row, so
+ * counting off `workouts` and `sets` directly would re-run three queries a few hundred times per
+ * backfill page. `sync_state` moves once per page and once per sync, which is the pace a human
+ * reads at, so the totals are recounted from that.
+ */
 function useSyncCounts() {
   const db = useDatabase();
-
-  const workoutRows = useLiveQuery(db.select({ value: count() }).from(workouts));
-  const setRows = useLiveQuery(db.select({ value: count() }).from(sets));
-  const routineRows = useLiveQuery(db.select({ value: count() }).from(routines));
-  const queue = useLiveQuery(db.select().from(outbox));
   const state = useLiveQuery(db.select().from(syncState));
+  const queue = useLiveQuery(db.select().from(outbox));
+
+  const stateUpdatedAt = state.updatedAt?.getTime();
+  const totals = useMemo(() => readTotals(db), [db, stateUpdatedAt]);
 
   return {
-    workouts: workoutRows.data[0]?.value ?? 0,
-    sets: setRows.data[0]?.value ?? 0,
-    routines: routineRows.data[0]?.value ?? 0,
+    ...totals,
     pendingWrites: queue.data.filter((row) => row.attempts < MAX_ATTEMPTS).length,
-    failedWrites: queue.data.filter((row) => row.attempts > 0).length,
+    retryingWrites: queue.data.filter(
+      (row) => row.attempts > 0 && row.attempts < MAX_ATTEMPTS
+    ).length,
+    deadWrites: queue.data.filter((row) => row.attempts >= MAX_ATTEMPTS).length,
     lastWriteError: queue.data.find((row) => row.lastError !== null)?.lastError ?? null,
     state: state.data[0] ?? null,
   };
