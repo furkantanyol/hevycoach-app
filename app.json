@@ -65,7 +65,8 @@
       "router": {},
       "eas": {
         "projectId": "1781384f-bb50-4df2-8519-26f74a7cfe41"
-      }
+      },
+      "coachApiBaseUrl": "https://iwsoipejksegxafbalsj.supabase.co/functions/v1"
     },
     "owner": "furkantanyol",
     "updates": {

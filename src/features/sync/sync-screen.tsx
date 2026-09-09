@@ -1,5 +1,7 @@
+import { and, count, desc, eq, gte, ne } from 'drizzle-orm';
 import { useNetworkState } from 'expo-network';
-import { Button, ScrollView, StyleSheet, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Button, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { RoutineEditor } from './routine-editor';
 import { useSync } from './use-sync';
@@ -7,6 +9,11 @@ import { useSync } from './use-sync';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
+import { useDatabase } from '@/db/provider';
+import { sets, workoutExercises, workouts, type SyncDatabase } from '@/db/schema';
+import { useAskCoach } from '@/features/coach/use-ask-coach';
+import { getApiKey } from '@/features/settings/api-key';
+import { useTheme } from '@/hooks/use-theme';
 
 function Row({ label, value }: { label: string; value: string }) {
   return (
@@ -22,9 +29,26 @@ function Row({ label, value }: { label: string; value: string }) {
 }
 
 export default function SyncScreen() {
+  const theme = useTheme();
+  const db = useDatabase();
   const { isConnected } = useNetworkState();
   const { run, status, summary, error, counts } = useSync();
+  const { ask, status: askStatus, answer, error: askError } = useAskCoach();
   const state = counts.state;
+
+  const [hasApiKey, setHasApiKey] = useState(false);
+  const apiKeyCheckCancelled = useRef(false);
+
+  useEffect(() => {
+    getApiKey().then((apiKey) => {
+      if (!apiKeyCheckCancelled.current) {
+        setHasApiKey(Boolean(apiKey));
+      }
+    });
+    return () => {
+      apiKeyCheckCancelled.current = true;
+    };
+  }, []);
 
   return (
     <ThemedView style={styles.container}>
@@ -71,6 +95,26 @@ export default function SyncScreen() {
           <ThemedText type="subtitle">Rename a routine</ThemedText>
           <RoutineEditor />
         </View>
+
+        <View style={styles.section}>
+          <ThemedText type="subtitle">Coach</ThemedText>
+          <Button
+            title="Ask about last week"
+            onPress={() => ask({ subject: 'block', context: buildWeeklyContext(db) })}
+            disabled={!hasApiKey || isConnected === false || askStatus === 'pending'}
+          />
+          <ThemedText type="small" themeColor="textSecondary">
+            {describeCoach({ status: askStatus, error: askError })}
+          </ThemedText>
+          <TextInput
+            value={answer ?? ''}
+            editable={false}
+            multiline
+            placeholder="The coach's answer will appear here."
+            placeholderTextColor={theme.textSecondary}
+            style={[styles.answer, { color: theme.text }]}
+          />
+        </View>
       </ScrollView>
     </ThemedView>
   );
@@ -106,6 +150,57 @@ function describeSync({ status, summary, error }: SyncDescription): string {
   return 'Pull your Hevy history down and push queued writes back up.';
 }
 
+type CoachDescription = { status: ReturnType<typeof useAskCoach>['status']; error: string | null };
+
+function describeCoach({ status, error }: CoachDescription): string {
+  if (status === 'pending') {
+    return 'Asking the coach…';
+  }
+  if (status === 'error') {
+    return error ?? 'The coach could not answer.';
+  }
+  return 'Builds a summary of the last 7 days from your local data and asks the coach to explain it.';
+}
+
+const CONTEXT_WINDOW_DAYS = 7;
+const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
+
+/**
+ * A one-line summary of recent training, built from local SQLite — never a hardcoded string. This
+ * is the round trip the gate is checking: local data goes up, coaching comes back.
+ */
+function buildWeeklyContext(db: SyncDatabase): string {
+  const since = new Date(Date.now() - CONTEXT_WINDOW_DAYS * MILLISECONDS_PER_DAY);
+
+  const sessions =
+    db.select({ value: count() }).from(workouts).where(gte(workouts.startTime, since)).get()
+      ?.value ?? 0;
+
+  const workingSets =
+    db
+      .select({ value: count() })
+      .from(sets)
+      .innerJoin(workoutExercises, eq(sets.workoutExerciseId, workoutExercises.id))
+      .innerJoin(workouts, eq(workoutExercises.workoutId, workouts.id))
+      .where(and(gte(workouts.startTime, since), ne(sets.type, 'warmup')))
+      .get()?.value ?? 0;
+
+  const latest = db
+    .select({ title: workouts.title, startTime: workouts.startTime })
+    .from(workouts)
+    .orderBy(desc(workouts.startTime))
+    .limit(1)
+    .get();
+
+  const latestSummary = latest
+    ? `most recent workout "${latest.title}" on ${latest.startTime.toISOString()}`
+    : 'no workouts logged yet';
+
+  return `${sessions} sessions and ${workingSets} working sets in the last ${CONTEXT_WINDOW_DAYS} days; ${latestSummary}.`;
+}
+
+const ANSWER_MIN_HEIGHT = 96;
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -125,5 +220,9 @@ const styles = StyleSheet.create({
   },
   value: {
     flexShrink: 1,
+  },
+  answer: {
+    minHeight: ANSWER_MIN_HEIGHT,
+    padding: Spacing.two,
   },
 });
