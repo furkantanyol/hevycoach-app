@@ -1,14 +1,22 @@
 import { HevyNetworkError, type HevyClient } from '@furkantanyol/hevy-client';
 
-import { runBackfill } from './backfill';
-import { runDelta } from './delta';
+import { runBackfill, type BackfillClient } from './backfill';
+import { runDelta, type DeltaClient } from './delta';
 import { toRoutineRow, toTemplateRow } from './mappers';
-import { drainOutbox } from './outbox';
+import { drainOutbox, type OutboxClient } from './outbox';
 import { readSyncState, writeSyncState } from './sync-state';
 
 import { exerciseTemplates, routines, type SyncDatabase } from '@/db/schema';
 
 const TEMPLATES_TTL_MS = 24 * 60 * 60 * 1_000;
+
+/** Everything a full pass touches, composed from what each step needs. */
+export type SyncClient = BackfillClient &
+  DeltaClient &
+  OutboxClient & {
+    exerciseTemplates: Pick<HevyClient['exerciseTemplates'], 'listAll'>;
+    routines: Pick<HevyClient['routines'], 'listAll'>;
+  };
 
 export type SyncSummary = {
   status: 'synced' | 'offline';
@@ -19,7 +27,7 @@ export type SyncSummary = {
 };
 
 /** The exercise library barely moves, so it is refreshed once a day rather than every sync. */
-async function refreshTemplatesIfStale(db: SyncDatabase, client: HevyClient): Promise<void> {
+async function refreshTemplatesIfStale(db: SyncDatabase, client: SyncClient): Promise<void> {
   const { templatesSyncedAt } = readSyncState(db);
 
   if (templatesSyncedAt && Date.now() - templatesSyncedAt.getTime() < TEMPLATES_TTL_MS) {
@@ -48,7 +56,7 @@ async function refreshTemplatesIfStale(db: SyncDatabase, client: HevyClient): Pr
  */
 async function refreshRoutines(
   db: SyncDatabase,
-  client: HevyClient,
+  client: SyncClient,
   pendingWrites: number
 ): Promise<void> {
   if (pendingWrites > 0) {
@@ -72,7 +80,7 @@ async function refreshRoutines(
  * One pass: push local writes, then pull. Writes go first so a routine the user just edited is not
  * immediately overwritten by the server's copy of it.
  */
-export async function runSync(db: SyncDatabase, client: HevyClient): Promise<SyncSummary> {
+export async function runSync(db: SyncDatabase, client: SyncClient): Promise<SyncSummary> {
   const summary: SyncSummary = {
     status: 'synced',
     sent: 0,
