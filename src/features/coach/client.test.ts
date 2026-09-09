@@ -1,4 +1,5 @@
 import { askCoach } from './client';
+import { coachIdentity } from './identity';
 
 import { getApiKey } from '@/features/settings/api-key';
 
@@ -51,6 +52,7 @@ describe('askCoach', () => {
     const explanation = await askCoach({ subject: 'block', context: 'week summary' });
 
     expect(explanation).toBe('Because you missed reps.');
+    expect(coachIdentity).toHaveBeenCalledWith(RAW_API_KEY);
     const [url, requestInit] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe(`${BASE_URL}/coach/explain`);
     const headers = requestInit.headers as Record<string, string>;

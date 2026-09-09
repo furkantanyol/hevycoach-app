@@ -1,16 +1,15 @@
-import { and, count, desc, eq, gte, ne } from 'drizzle-orm';
 import { useNetworkState } from 'expo-network';
 import { useEffect, useRef, useState } from 'react';
 import { Button, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { RoutineEditor } from './routine-editor';
 import { useSync } from './use-sync';
+import { buildWeeklyContext } from './weekly-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useDatabase } from '@/db/provider';
-import { sets, workoutExercises, workouts, type SyncDatabase } from '@/db/schema';
 import { useAskCoach } from '@/features/coach/use-ask-coach';
 import { getApiKey } from '@/features/settings/api-key';
 import { useTheme } from '@/hooks/use-theme';
@@ -160,43 +159,6 @@ function describeCoach({ status, error }: CoachDescription): string {
     return error ?? 'The coach could not answer.';
   }
   return 'Builds a summary of the last 7 days from your local data and asks the coach to explain it.';
-}
-
-const CONTEXT_WINDOW_DAYS = 7;
-const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
-
-/**
- * A one-line summary of recent training, built from local SQLite — never a hardcoded string. This
- * is the round trip the gate is checking: local data goes up, coaching comes back.
- */
-function buildWeeklyContext(db: SyncDatabase): string {
-  const since = new Date(Date.now() - CONTEXT_WINDOW_DAYS * MILLISECONDS_PER_DAY);
-
-  const sessions =
-    db.select({ value: count() }).from(workouts).where(gte(workouts.startTime, since)).get()
-      ?.value ?? 0;
-
-  const workingSets =
-    db
-      .select({ value: count() })
-      .from(sets)
-      .innerJoin(workoutExercises, eq(sets.workoutExerciseId, workoutExercises.id))
-      .innerJoin(workouts, eq(workoutExercises.workoutId, workouts.id))
-      .where(and(gte(workouts.startTime, since), ne(sets.type, 'warmup')))
-      .get()?.value ?? 0;
-
-  const latest = db
-    .select({ title: workouts.title, startTime: workouts.startTime })
-    .from(workouts)
-    .orderBy(desc(workouts.startTime))
-    .limit(1)
-    .get();
-
-  const latestSummary = latest
-    ? `most recent workout "${latest.title}" on ${latest.startTime.toISOString()}`
-    : 'no workouts logged yet';
-
-  return `${sessions} sessions and ${workingSets} working sets in the last ${CONTEXT_WINDOW_DAYS} days; ${latestSummary}.`;
 }
 
 const ANSWER_MIN_HEIGHT = 96;
