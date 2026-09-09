@@ -50,8 +50,7 @@
           "organization": "SENTRY_ORG_PLACEHOLDER",
           "project": "SENTRY_PROJECT_PLACEHOLDER"
         }
-      ],
-      "@sentry/react-native"
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
@@ -59,6 +58,16 @@
     },
     "runtimeVersion": {
       "policy": "fingerprint"
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "1781384f-bb50-4df2-8519-26f74a7cfe41"
+      }
+    },
+    "owner": "furkantanyol",
+    "updates": {
+      "url": "https://u.expo.dev/1781384f-bb50-4df2-8519-26f74a7cfe41"
     }
   }
 }
