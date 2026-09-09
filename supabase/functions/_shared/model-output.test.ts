@@ -10,7 +10,7 @@ import type { Validated } from './validate.ts';
 const TEMPLATE_IDS = new Set(['tpl-squat', 'tpl-bench', 'tpl-row']);
 
 const VALID_RESPONSE = {
-  block: { name: 'Upper emphasis', weeks: 4, sessionsPerWeek: 4 },
+  block: { name: 'Upper emphasis', weeks: 4, sessionsPerWeek: 1 },
   sessions: [
     {
       name: 'Lower A',
@@ -24,6 +24,17 @@ const VALID_RESPONSE = {
 function errorOf<T>(result: Validated<T>): string {
   assert(!result.ok, 'expected validation to fail');
   return result.error;
+}
+
+function sessionWith(name: string, exerciseTemplateIds: readonly string[]) {
+  return {
+    name,
+    focus: 'session focus',
+    exercises: exerciseTemplateIds.map((exerciseTemplateId) => ({
+      exerciseTemplateId,
+      role: 'primary',
+    })),
+  };
 }
 
 describe('parseProgramResponse', () => {
@@ -117,6 +128,74 @@ describe('parseProgramResponse', () => {
     };
 
     assertStringIncludes(errorOf(parseProgramResponse(empty, TEMPLATE_IDS)), 'exercises');
+  });
+});
+
+describe('parseProgramResponse session count', () => {
+  it('should reject more sessions than block.sessionsPerWeek', () => {
+    const response = {
+      ...VALID_RESPONSE,
+      block: { ...VALID_RESPONSE.block, sessionsPerWeek: 1 },
+      sessions: [sessionWith('Lower A', ['tpl-squat']), sessionWith('Upper A', ['tpl-bench'])],
+    };
+
+    const error = errorOf(parseProgramResponse(response, TEMPLATE_IDS));
+    assertStringIncludes(error, '2 entries');
+    assertStringIncludes(error, 'sessionsPerWeek is 1');
+  });
+
+  it('should reject fewer sessions than block.sessionsPerWeek', () => {
+    const response = {
+      ...VALID_RESPONSE,
+      block: { ...VALID_RESPONSE.block, sessionsPerWeek: 2 },
+      sessions: [sessionWith('Lower A', ['tpl-squat'])],
+    };
+
+    const error = errorOf(parseProgramResponse(response, TEMPLATE_IDS));
+    assertStringIncludes(error, '1 entries');
+    assertStringIncludes(error, 'sessionsPerWeek is 2');
+  });
+});
+
+describe('parseProgramResponse duplicate sessions', () => {
+  it('should reject two sessions with identical ordered exercise ids', () => {
+    const response = {
+      ...VALID_RESPONSE,
+      block: { ...VALID_RESPONSE.block, sessionsPerWeek: 2 },
+      sessions: [
+        sessionWith('Lower A', ['tpl-squat', 'tpl-row']),
+        sessionWith('Lower A', ['tpl-squat', 'tpl-row']),
+      ],
+    };
+
+    assertStringIncludes(errorOf(parseProgramResponse(response, TEMPLATE_IDS)), 'Lower A');
+  });
+
+  it('should accept sessions that share exercises but differ in order or content', () => {
+    const response = {
+      ...VALID_RESPONSE,
+      block: { ...VALID_RESPONSE.block, sessionsPerWeek: 3 },
+      sessions: [
+        sessionWith('Lower A', ['tpl-squat', 'tpl-row']),
+        sessionWith('Lower B', ['tpl-row', 'tpl-squat']),
+        sessionWith('Lower C', ['tpl-squat', 'tpl-bench']),
+      ],
+    };
+
+    assert(parseProgramResponse(response, TEMPLATE_IDS).ok);
+  });
+
+  it('should not flag one session whose exercises are a prefix of another session\'s', () => {
+    const response = {
+      ...VALID_RESPONSE,
+      block: { ...VALID_RESPONSE.block, sessionsPerWeek: 2 },
+      sessions: [
+        sessionWith('Lower A', ['tpl-squat']),
+        sessionWith('Lower B', ['tpl-squat', 'tpl-bench']),
+      ],
+    };
+
+    assert(parseProgramResponse(response, TEMPLATE_IDS).ok);
   });
 });
 

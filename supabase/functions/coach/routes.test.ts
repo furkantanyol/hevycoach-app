@@ -29,7 +29,7 @@ const PROGRAM_BODY = {
 };
 
 const PROGRAM_OUTPUT = {
-  block: { name: 'Upper emphasis', weeks: 4, sessionsPerWeek: 4 },
+  block: { name: 'Upper emphasis', weeks: 4, sessionsPerWeek: 1 },
   sessions: [
     {
       name: 'Lower A',

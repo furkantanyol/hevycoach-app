@@ -171,6 +171,27 @@ function parseSession(
   return { ok: true, value: { name: name.value, focus: focus.value, exercises } };
 }
 
+/**
+ * The ordered exercise ids are what make a session distinct to the rules
+ * engine — two sessions with the same ids in the same order collide into one
+ * training day even if the model gave them different names or focus text.
+ */
+function sessionExerciseSignature(session: ProgramSession): string {
+  return JSON.stringify(session.exercises.map((exercise) => exercise.exerciseTemplateId));
+}
+
+function findDuplicateSessionName(sessions: readonly ProgramSession[]): string | null {
+  const seenSignatures = new Set<string>();
+  for (const session of sessions) {
+    const signature = sessionExerciseSignature(session);
+    if (seenSignatures.has(signature)) {
+      return session.name;
+    }
+    seenSignatures.add(signature);
+  }
+  return null;
+}
+
 export function parseProgramResponse(
   value: unknown,
   offeredTemplateIds: ReadonlySet<string>,
@@ -186,12 +207,21 @@ export function parseProgramResponse(
   if (!block.ok) return block;
   const sessionValues = readArray(value, 'sessions', MAX_SESSIONS);
   if (!sessionValues.ok) return sessionValues;
+  if (sessionValues.value.length !== block.value.sessionsPerWeek) {
+    return invalid(
+      `sessions has ${sessionValues.value.length} entries but block.sessionsPerWeek is ${block.value.sessionsPerWeek}`,
+    );
+  }
 
   const sessions: ProgramSession[] = [];
   for (const candidate of sessionValues.value) {
     const session = parseSession(candidate, offeredTemplateIds);
     if (!session.ok) return session;
     sessions.push(session.value);
+  }
+  const duplicateSessionName = findDuplicateSessionName(sessions);
+  if (duplicateSessionName !== null) {
+    return invalid(`session "${duplicateSessionName}" duplicates another session's exercises`);
   }
   const rationale = readProse(value, 'rationale');
   if (!rationale.ok) return rationale;
