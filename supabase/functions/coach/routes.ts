@@ -6,15 +6,17 @@ import {
 } from '../_shared/anthropic.ts';
 import type { Database } from '../_shared/db.ts';
 import { identityFromHash, IDENTITY_HEADER } from '../_shared/identity.ts';
-import { consumeRateLimit, type RateLimitPolicy } from '../_shared/rate-limit.ts';
 import {
   EXPLAIN_OUTPUT_SCHEMA,
-  type ExplainRequest,
-  parseExplainRequest,
   parseExplainResponse,
-  parseProgramRequest,
   parseProgramResponse,
   PROGRAM_OUTPUT_SCHEMA,
+} from '../_shared/model-output.ts';
+import { consumeRateLimit, type RateLimitPolicy } from '../_shared/rate-limit.ts';
+import {
+  type ExplainRequest,
+  parseExplainRequest,
+  parseProgramRequest,
   type ProgramRequest,
 } from '../_shared/schemas.ts';
 

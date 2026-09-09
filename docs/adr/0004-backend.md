@@ -121,6 +121,10 @@ None of that is trusted to hold. The response is validated on the way out.
 
 ## The model may not return a number
 
+`_shared/model-output.ts` is its own module for this reason: what the model
+sends back is a different trust boundary from what a client sends us, and the
+two are validated separately.
+
 The structured-output schema has nowhere to put a weight, a set count or a rep
 range, and the runtime validator rejects unknown keys rather than dropping them,
 so a `sets: 4` that appeared anyway fails the whole response. Every returned

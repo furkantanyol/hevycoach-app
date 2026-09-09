@@ -2,13 +2,10 @@ import { assert, assertEquals, assertStringIncludes } from '@std/assert';
 import { describe, it } from '@std/testing/bdd';
 import {
   parseExplainRequest,
+  parseHevyWebhookEvent,
   parseProgramRequest,
-  parseProgramResponse,
-  PROGRAM_OUTPUT_SCHEMA,
-  type Validated,
 } from './schemas.ts';
-
-const TEMPLATE_IDS = new Set(['tpl-squat', 'tpl-bench', 'tpl-row']);
+import type { Validated } from './validate.ts';
 
 const VALID_REQUEST = {
   onboarding: {
@@ -23,18 +20,6 @@ const VALID_REQUEST = {
   templates: [
     { id: 'tpl-squat', title: 'Squat (Barbell)', primaryMuscleGroup: 'quadriceps', equipment: 'barbell' },
   ],
-};
-
-const VALID_RESPONSE = {
-  block: { name: 'Upper emphasis', weeks: 4, sessionsPerWeek: 4 },
-  sessions: [
-    {
-      name: 'Lower A',
-      focus: 'bilateral squat pattern',
-      exercises: [{ exerciseTemplateId: 'tpl-squat', role: 'primary' }],
-    },
-  ],
-  rationale: 'Your bench has not moved, so pressing gets the fresh slot.',
 };
 
 function errorOf<T>(result: Validated<T>): string {
@@ -107,110 +92,27 @@ describe('parseExplainRequest', () => {
   });
 });
 
-describe('parseProgramResponse', () => {
-  it('should accept a response built only from offered templates', () => {
-    const result = parseProgramResponse(VALID_RESPONSE, TEMPLATE_IDS);
+describe('parseHevyWebhookEvent', () => {
+  it('should accept the shape Hevy posts', () => {
+    const result = parseHevyWebhookEvent({ id: 'evt-1', payload: { workoutId: 'wk-1' } });
     assert(result.ok);
-    assertEquals(result.value.sessions[0].exercises[0].exerciseTemplateId, 'tpl-squat');
+    assertEquals(result.value, { id: 'evt-1', workoutId: 'wk-1' });
   });
 
-  it('should reject an exercise template id the request never offered', () => {
-    const hallucinated = {
-      ...VALID_RESPONSE,
-      sessions: [
-        {
-          ...VALID_RESPONSE.sessions[0],
-          exercises: [{ exerciseTemplateId: 'tpl-invented', role: 'primary' }],
-        },
-      ],
-    };
-
-    assertStringIncludes(errorOf(parseProgramResponse(hallucinated, TEMPLATE_IDS)), 'tpl-invented');
+  it('should reject a payload with no workout id', () => {
+    assertStringIncludes(errorOf(parseHevyWebhookEvent({ id: 'evt-1', payload: {} })), 'workoutId');
   });
 
-  it('should reject a hallucinated id even when the rest of the session is valid', () => {
-    const mixed = {
-      ...VALID_RESPONSE,
-      sessions: [
-        {
-          ...VALID_RESPONSE.sessions[0],
-          exercises: [
-            { exerciseTemplateId: 'tpl-squat', role: 'primary' },
-            { exerciseTemplateId: 'tpl-ghost', role: 'accessory' },
-          ],
-        },
-      ],
-    };
-
-    assertStringIncludes(errorOf(parseProgramResponse(mixed, TEMPLATE_IDS)), 'tpl-ghost');
+  it('should reject an empty event id', () => {
+    const result = parseHevyWebhookEvent({ id: '', payload: { workoutId: 'wk-1' } });
+    assertStringIncludes(errorOf(result), 'id');
   });
 
-  it('should reject a set count smuggled onto an exercise', () => {
-    const withSets = {
-      ...VALID_RESPONSE,
-      sessions: [
-        {
-          ...VALID_RESPONSE.sessions[0],
-          exercises: [{ exerciseTemplateId: 'tpl-squat', role: 'primary', sets: 4 }],
-        },
-      ],
-    };
-
-    assertStringIncludes(errorOf(parseProgramResponse(withSets, TEMPLATE_IDS)), 'sets');
-  });
-
-  it('should reject a rep range smuggled onto a session', () => {
-    const withReps = {
-      ...VALID_RESPONSE,
-      sessions: [{ ...VALID_RESPONSE.sessions[0], repRange: '8-12' }],
-    };
-
-    assertStringIncludes(errorOf(parseProgramResponse(withReps, TEMPLATE_IDS)), 'repRange');
-  });
-
-  it('should reject a working weight smuggled onto the block', () => {
-    const withWeight = {
-      ...VALID_RESPONSE,
-      block: { ...VALID_RESPONSE.block, startingWeightKg: 87.5 },
-    };
-
-    assertStringIncludes(errorOf(parseProgramResponse(withWeight, TEMPLATE_IDS)), 'startingWeightKg');
-  });
-
-  it('should reject an unknown exercise role', () => {
-    const badRole = {
-      ...VALID_RESPONSE,
-      sessions: [
-        {
-          ...VALID_RESPONSE.sessions[0],
-          exercises: [{ exerciseTemplateId: 'tpl-squat', role: 'warmup' }],
-        },
-      ],
-    };
-
-    assertStringIncludes(errorOf(parseProgramResponse(badRole, TEMPLATE_IDS)), 'role');
-  });
-
-  it('should reject a session with no exercises', () => {
-    const empty = {
-      ...VALID_RESPONSE,
-      sessions: [{ ...VALID_RESPONSE.sessions[0], exercises: [] }],
-    };
-
-    assertStringIncludes(errorOf(parseProgramResponse(empty, TEMPLATE_IDS)), 'exercises');
-  });
-});
-
-describe('PROGRAM_OUTPUT_SCHEMA', () => {
-  it('should not mention any number the rules engine owns', () => {
-    const serialised = JSON.stringify(PROGRAM_OUTPUT_SCHEMA).toLowerCase();
-    for (const forbidden of ['weight', 'sets', 'reps', 'rpe', 'rir', 'load', 'percent', 'rest']) {
-      assertEquals(serialised.includes(forbidden), false, `schema mentions ${forbidden}`);
-    }
-  });
-
-  it('should forbid additional properties at every level', () => {
-    const serialised = JSON.stringify(PROGRAM_OUTPUT_SCHEMA);
-    assertEquals(serialised.split('"additionalProperties":false').length - 1, 4);
+  it('should reject an unexpected field in the payload', () => {
+    const result = parseHevyWebhookEvent({
+      id: 'evt-1',
+      payload: { workoutId: 'wk-1', identityHash: 'spoofed' },
+    });
+    assertStringIncludes(errorOf(result), 'identityHash');
   });
 });
