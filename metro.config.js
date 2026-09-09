@@ -1,3 +1,8 @@
 const { getSentryExpoConfig } = require('@sentry/react-native/metro');
 
-module.exports = getSentryExpoConfig(__dirname);
+const config = getSentryExpoConfig(__dirname);
+
+// Drizzle's generated migrations are imported as `.sql` modules.
+config.resolver.sourceExts.push('sql');
+
+module.exports = config;
