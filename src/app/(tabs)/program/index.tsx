@@ -1,50 +1,78 @@
-import type { Routine } from '@furkantanyol/hevy-client';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import type { Routine, RoutineExercise } from '@furkantanyol/hevy-client';
+import { FlashList } from '@shopify/flash-list';
+import { StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
-import { describeMissingData } from '@/features/hevy/describe-query';
 import { useRoutines } from '@/features/hevy/queries';
-import { describeTargetSet } from '@/features/lifts/format';
+import { QueryStatus } from '@/features/hevy/query-status';
+import { describeTargetSets } from '@/features/lifts/format';
 import { LiftLink } from '@/features/lifts/lift-link';
 
 const LIFT_DETAIL_PATHNAME = '/program/lift/[templateId]' as const;
+const NO_ROUTINES = 'No routines saved in Hevy yet. Build one in Hevy and it shows up here.';
+
+type Row =
+  | { readonly kind: 'session'; readonly key: string; readonly routine: Routine }
+  | { readonly kind: 'exercise'; readonly key: string; readonly exercise: RoutineExercise };
 
 /**
- * The routines that exist in Hevy today, with the targets Hevy itself stores on them. The
- * generated block replaces this content once the rules engine can produce one.
+ * The block, as it exists today: the user's own Hevy routines, each a session of exercises with
+ * the target sets Hevy itself stores. A generated block will take this shape, which is why the
+ * list is sessions containing exercises rather than a flat exercise list.
  */
+function toRows(routines: readonly Routine[]): Row[] {
+  return routines.flatMap<Row>((routine) => [
+    { kind: 'session', key: `routine-${routine.id}`, routine },
+    ...routine.exercises.map((exercise) => ({
+      kind: 'exercise' as const,
+      key: `exercise-${routine.id}-${exercise.index}-${exercise.exercise_template_id}`,
+      exercise,
+    })),
+  ]);
+}
+
 export default function ProgramScreen() {
   const routines = useRoutines();
+  const rows = toRows(routines.data ?? []);
 
   return (
     <ThemedView style={styles.container}>
-      <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content}>
-        {routines.data?.map((routine) => <RoutineBlock key={routine.id} routine={routine} />)}
-        {routines.data?.length ? null : (
-          <ThemedText themeColor="textSecondary">
-            {describeMissingData(routines, 'No routines saved in Hevy yet.')}
-          </ThemedText>
-        )}
-      </ScrollView>
+      <FlashList
+        contentInsetAdjustmentBehavior="automatic"
+        contentContainerStyle={styles.content}
+        data={rows}
+        getItemType={(row) => row.kind}
+        keyExtractor={(row) => row.key}
+        ListHeaderComponent={<QueryStatus query={routines} hasRows whenEmpty={NO_ROUTINES} />}
+        ListEmptyComponent={
+          <QueryStatus query={routines} hasRows={false} whenEmpty={NO_ROUTINES} />
+        }
+        renderItem={({ item }) =>
+          item.kind === 'session' ? (
+            <SessionRow routine={item.routine} />
+          ) : (
+            <LiftLink
+              pathname={LIFT_DETAIL_PATHNAME}
+              templateId={item.exercise.exercise_template_id}
+              title={item.exercise.title}
+              detail={describeTargetSets(item.exercise.sets)}
+            />
+          )
+        }
+      />
     </ThemedView>
   );
 }
 
-function RoutineBlock({ routine }: { routine: Routine }) {
+function SessionRow({ routine }: { routine: Routine }) {
   return (
-    <View style={styles.section}>
+    <View style={styles.sessionRow}>
       <ThemedText type="subtitle">{routine.title}</ThemedText>
-      {routine.exercises.map((exercise) => (
-        <LiftLink
-          key={`${exercise.index}-${exercise.exercise_template_id}`}
-          pathname={LIFT_DETAIL_PATHNAME}
-          templateId={exercise.exercise_template_id}
-          title={exercise.title}
-          detail={exercise.sets.map(describeTargetSet).join('   ')}
-        />
-      ))}
+      <ThemedText type="small" themeColor="textSecondary">
+        {`${routine.exercises.length} exercises`}
+      </ThemedText>
     </View>
   );
 }
@@ -54,10 +82,11 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    gap: Spacing.four,
     padding: Spacing.four,
   },
-  section: {
-    gap: Spacing.two,
+  sessionRow: {
+    gap: Spacing.half,
+    paddingTop: Spacing.four,
+    paddingBottom: Spacing.two,
   },
 });
