@@ -1,6 +1,7 @@
-import Storage from 'expo-sqlite/kv-store';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
+
+import Storage from './storage';
 
 type SettingsState = {
   exportEnabled: boolean;
