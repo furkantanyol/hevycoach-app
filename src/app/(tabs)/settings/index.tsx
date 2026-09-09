@@ -1,4 +1,3 @@
-import { useNetworkState } from 'expo-network';
 import { Link } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { Button, Pressable, ScrollView, StyleSheet, Switch, TextInput, View } from 'react-native';
@@ -6,10 +5,8 @@ import { Button, Pressable, ScrollView, StyleSheet, Switch, TextInput, View } fr
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
-import { useAskCoach } from '@/features/coach/use-ask-coach';
-import { buildWeeklyContext, CONTEXT_WINDOW_DAYS } from '@/features/coach/weekly-context';
 import { useHealthExport, type ExportStatus } from '@/features/health/use-health-export';
-import { resetHevyQueries, useRecentWorkouts } from '@/features/hevy/queries';
+import { resetHevyQueries } from '@/features/hevy/queries';
 import { useProCheck } from '@/features/pro/use-pro-check';
 import { getApiKey, setApiKey } from '@/features/settings/api-key';
 import { useSettingsStore } from '@/features/settings/settings-store';
@@ -105,47 +102,8 @@ export default function SettingsScreen() {
         <ThemedText type="small" themeColor="textSecondary">
           {describeStatus({ healthAvailable, status, result, error })}
         </ThemedText>
-
-        <CoachSection hasApiKey={keySaved} />
       </ScrollView>
     </ThemedView>
-  );
-}
-
-/** Phase C moves this into the Week review screen, where asking about last week belongs. */
-function CoachSection({ hasApiKey }: { hasApiKey: boolean }) {
-  const theme = useTheme();
-  const { isConnected } = useNetworkState();
-  const { ask, status, answer, error } = useAskCoach();
-  const workouts = useRecentWorkouts(CONTEXT_WINDOW_DAYS, { enabled: hasApiKey });
-
-  const offline = isConnected === false;
-  const canAsk = hasApiKey && !offline && workouts.data !== undefined && status !== 'pending';
-
-  return (
-    <View style={styles.section}>
-      <ThemedText type="subtitle">Coach</ThemedText>
-      <Button
-        title="Ask about last week"
-        onPress={() => {
-          if (workouts.data) {
-            ask({ subject: 'block', context: buildWeeklyContext(workouts.data) });
-          }
-        }}
-        disabled={!canAsk}
-      />
-      <ThemedText type="small" themeColor="textSecondary">
-        {describeCoach({ status, error, workoutsError: workouts.error })}
-      </ThemedText>
-      <TextInput
-        value={answer ?? ''}
-        editable={false}
-        multiline
-        placeholder="The coach's answer will appear here."
-        placeholderTextColor={theme.textSecondary}
-        style={[styles.answer, { color: theme.text }]}
-      />
-    </View>
   );
 }
 
@@ -194,26 +152,6 @@ function describeStatus({ healthAvailable, status, result, error }: StatusDescri
   return 'Already-exported workouts are skipped unless they changed in Hevy. Energy is an estimate.';
 }
 
-type CoachDescription = {
-  status: ReturnType<typeof useAskCoach>['status'];
-  error: string | null;
-  workoutsError: Error | null;
-};
-
-function describeCoach({ status, error, workoutsError }: CoachDescription): string {
-  if (status === 'pending') {
-    return 'Asking the coach…';
-  }
-  if (status === 'error') {
-    return error ?? 'The coach could not answer.';
-  }
-  if (workoutsError) {
-    return workoutsError.message;
-  }
-  return `Summarises your last ${CONTEXT_WINDOW_DAYS} days from Hevy and asks the coach to explain it.`;
-}
-
-const ANSWER_MIN_HEIGHT = 96;
 const MIN_TAP_TARGET = 44;
 
 const styles = StyleSheet.create({
@@ -241,9 +179,5 @@ const styles = StyleSheet.create({
     borderRadius: Spacing.two,
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.two,
-  },
-  answer: {
-    minHeight: ANSWER_MIN_HEIGHT,
-    padding: Spacing.two,
   },
 });

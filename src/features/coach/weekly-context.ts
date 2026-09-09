@@ -12,6 +12,16 @@ function countWorkingSets(workout: Workout): number {
   );
 }
 
+/** The workouts that fall inside the rolling window, from a list that may reach further back. */
+export function workoutsWithin(
+  workouts: readonly Workout[],
+  days: number,
+  now: Date = new Date()
+): Workout[] {
+  const since = now.getTime() - days * MILLISECONDS_PER_DAY;
+  return workouts.filter((workout) => Date.parse(workout.start_time) >= since);
+}
+
 function newest(workouts: readonly Workout[]): Workout | undefined {
   return workouts.reduce<Workout | undefined>(
     (latest, workout) =>
@@ -31,8 +41,7 @@ function newest(workouts: readonly Workout[]): Workout | undefined {
  * as a quiet week rather than as an empty history.
  */
 export function buildWeeklyContext(workouts: readonly Workout[], now: Date = new Date()): string {
-  const since = now.getTime() - CONTEXT_WINDOW_DAYS * MILLISECONDS_PER_DAY;
-  const inWindow = workouts.filter((workout) => Date.parse(workout.start_time) >= since);
+  const inWindow = workoutsWithin(workouts, CONTEXT_WINDOW_DAYS, now);
   const workingSets = inWindow.reduce((total, workout) => total + countWorkingSets(workout), 0);
 
   const latest = newest(workouts);
