@@ -14,7 +14,9 @@ function Row({ label, value }: { label: string; value: string }) {
       <ThemedText type="small" themeColor="textSecondary">
         {label}
       </ThemedText>
-      <ThemedText type="smallBold">{value}</ThemedText>
+      <ThemedText type="smallBold" style={styles.value} numberOfLines={1}>
+        {value}
+      </ThemedText>
     </View>
   );
 }
@@ -112,5 +114,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: Spacing.three,
+  },
+  value: {
+    flexShrink: 1,
   },
 });
