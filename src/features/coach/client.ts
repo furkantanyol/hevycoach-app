@@ -70,10 +70,13 @@ export async function askCoach(input: AskCoachInput): Promise<string> {
     throw new Error('Save your Hevy API key in Settings first.');
   }
   const identity = await coachIdentity(apiKey);
+  // Resolved before the try block so a missing/misconfigured base URL throws its own message
+  // instead of being swallowed into the generic network-failure one below.
+  const url = `${coachBaseUrl()}${EXPLAIN_PATH}`;
 
   let response: Response;
   try {
-    response = await fetch(`${coachBaseUrl()}${EXPLAIN_PATH}`, {
+    response = await fetch(url, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
