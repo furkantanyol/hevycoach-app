@@ -1,8 +1,31 @@
-import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
+import * as Sentry from '@sentry/react-native';
+import {
+  DarkTheme,
+  DefaultTheme,
+  Stack,
+  ThemeProvider,
+  useNavigationContainerRef,
+} from 'expo-router';
+import { useEffect } from 'react';
 import { useColorScheme } from 'react-native';
 
-export default function RootLayout() {
+const navigationIntegration = Sentry.reactNavigationIntegration();
+const dsn = process.env.EXPO_PUBLIC_SENTRY_DSN;
+
+Sentry.init({
+  dsn,
+  enabled: Boolean(dsn),
+  tracesSampleRate: 1.0,
+  integrations: [navigationIntegration],
+});
+
+function RootLayout() {
   const colorScheme = useColorScheme();
+  const navigationRef = useNavigationContainerRef();
+
+  useEffect(() => {
+    navigationIntegration.registerNavigationContainer(navigationRef);
+  }, [navigationRef]);
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
@@ -13,3 +36,5 @@ export default function RootLayout() {
     </ThemeProvider>
   );
 }
+
+export default Sentry.wrap(RootLayout);
