@@ -63,15 +63,24 @@ rather than paused); it does not own durability.
 
 Drain rules:
 
-- Oldest row first, one at a time. The first rejection stops the drain, because
-  a later write must never overtake an earlier one.
+- Oldest row first, one at a time. Anything that stops the head stops the whole
+  queue — a rejection, or a row still serving its backoff — because a later
+  write must never overtake an earlier one. Filtering the not-yet-due rows out
+  of the query instead would do exactly the opposite, and quietly.
+- A row that has run out of attempts is the one exception: it is stepped over,
+  not waited on, because it will never be sent and waiting would freeze the
+  queue for good. It is counted and shown on the Sync screen as given up.
 - A rejection records `attempts + 1`, a `nextAttemptAt` from exponential backoff
-  with full jitter (1s doubling to a 5 minute cap), and the error message. After
-  8 attempts the row stops being retried and is reported as dead rather than
-  retried forever or silently dropped.
-- A `HevyNetworkError` is not the row's fault, so it stops the drain without
-  spending one of the row's attempts. Otherwise a week offline would kill the
-  queue.
+  with full jitter (1s doubling, capped at 5 minutes), and the error message.
+  After 8 attempts the row stops being retried. The 8-attempt ladder tops out
+  around two minutes, so the cap only binds if that budget ever grows.
+- A `HevyNetworkError` is not the row's fault, so the drain stops and reports
+  itself offline without spending one of the row's attempts. Otherwise a week
+  offline would kill the queue.
+- The outbox primary key is `AUTOINCREMENT`, not a bare rowid. SQLite reuses the
+  highest rowid after a delete, and coalescing deletes before it inserts, so a
+  reused id would put the re-edited row back at the *head* of the queue and
+  silently invert the ordering.
 - Enqueueing coalesces: a pending row for the same routine is deleted before the
   new one is inserted. The last edit wins, and because the new row goes in at the
   tail the queue stays FIFO across different routines.
@@ -101,9 +110,17 @@ here" and is never seen. Taking the watermark first makes the overlap the safe
 direction: anything that changes during the backfill is re-delivered by the
 first delta pass, and re-delivery is idempotent.
 
+The watermark is also backdated by five minutes, because it comes off the device
+clock. If the device runs ahead of Hevy's server, every event Hevy stamps inside
+that gap sorts before the cursor and is never delivered — permanently and
+silently. Overlapping the other way only costs a few repeated upserts.
+
 The page loop is resumable. `backfillPage` is written after each page is applied,
 so an interrupted run repeats at most one page, and `backfillDone` is what stops
-the loop from running again.
+the loop from running again. Pages are fetched back to back with no pacing; at
+ten workouts a page a large history is a few hundred sequential requests. The
+client retries 429s on its own, so this is accepted rather than throttled, but
+it is the first thing to revisit if Hevy starts pushing back.
 
 ### Known gap
 
@@ -128,15 +145,28 @@ Normalising them would buy queries no screen asks for and add a
 delete-and-reinsert dance on every save. Workouts get the relational treatment
 because the analysis screens genuinely need it; routines do not.
 
-One consequence: because a routine update replaces everything, a full routine
-refresh from the server would clobber a local edit that has not shipped yet. So
-the refresh is skipped while the outbox still holds a routine write.
+Two consequences.
+
+Because a routine update replaces everything, a full routine refresh from the
+server would clobber a local edit that has not shipped yet. So the refresh is
+skipped while the outbox still holds a routine write.
+
+And Hevy's routine *read* model has no `notes` field even though its update body
+accepts one, so there is no `notes` column: it could never be filled. The honest
+consequence is that a rename cannot round-trip a note, and the replacing `PUT`
+may clear one the user has in Hevy. Stated rather than half-guarded against,
+because a guard for a field the API never sends is a guard that never runs.
 
 ## Consequences
 
 - Every read screen can be built against SQLite and will work with the network
   off. The Sync screen is the proof surface: counts, backfill position, cursor,
-  queue depth and last error all come from the database.
+  queue depth and both error fields all come from the database. The table counts
+  are recounted whenever `sync_state` moves rather than on every row change —
+  SQLite's change hook fires per row, which is a few hundred times per backfill
+  page.
+- `pnpm validate` ends with the web export, because "web never imports
+  expo-sqlite" is a constraint no test can see.
 - Sync is iOS-first and Android-compatible. Web is out of scope for it: the
   route is a one-line re-export of a platform-split screen, because Expo Router
   bundles the fallback route file on every platform, so a `sync.web.tsx` sibling
