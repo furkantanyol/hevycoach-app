@@ -4,7 +4,7 @@ import { and, asc, eq, lt, lte } from 'drizzle-orm';
 import { MAX_ATTEMPTS, nextAttemptDelayMs } from './backoff';
 import { toRoutineUpdateInput } from './mappers';
 
-import { outbox, type OutboxRow, type RoutineRow, type SyncDatabase } from '@/db/schema';
+import { outbox, routines, type OutboxRow, type RoutineRow, type SyncDatabase } from '@/db/schema';
 
 export type OutboxClient = { routines: Pick<HevyClient['routines'], 'update'> };
 
@@ -37,6 +37,22 @@ export function enqueueRoutineUpdate(db: SyncDatabase, routine: RoutineRow): voi
         nextAttemptAt: now,
       })
       .run();
+  });
+}
+
+/**
+ * Guard on every write that leaves the device: until the account owner lifts it, a routine this app
+ * touches is renamed so it is obvious in Hevy which routines came from here.
+ */
+const TEST_PREFIX = '[TEST]';
+
+/** Renames a routine locally and queues the same change for Hevy, in one transaction. */
+export function saveRoutineTitle(db: SyncDatabase, routine: RoutineRow, title: string): void {
+  const guarded = title.startsWith(TEST_PREFIX) ? title : `${TEST_PREFIX} ${title}`;
+
+  db.transaction((tx) => {
+    tx.update(routines).set({ title: guarded }).where(eq(routines.id, routine.id)).run();
+    enqueueRoutineUpdate(tx, { ...routine, title: guarded });
   });
 }
 

@@ -17,10 +17,16 @@ export const queryClient = new QueryClient({
 
 export const persister = createAsyncStoragePersister({ storage: Storage });
 
-// React Query's default online check is a browser one; expo-network is the real signal on a device.
-onlineManager.setEventListener((setOnline) => {
-  getNetworkStateAsync().then((state) => setOnline(state.isConnected ?? false));
-  const subscription = addNetworkStateListener((state) => setOnline(state.isConnected ?? false));
+/**
+ * React Query's default online check is a browser one; expo-network is the real signal on a device.
+ * Called from an effect rather than at import, because static web rendering runs this file in Node
+ * where expo-network's web module has no `window` to listen on.
+ */
+export function startOnlineWatch(): void {
+  onlineManager.setEventListener((setOnline) => {
+    getNetworkStateAsync().then((state) => setOnline(state.isConnected ?? false));
+    const subscription = addNetworkStateListener((state) => setOnline(state.isConnected ?? false));
 
-  return () => subscription.remove();
-});
+    return () => subscription.remove();
+  });
+}

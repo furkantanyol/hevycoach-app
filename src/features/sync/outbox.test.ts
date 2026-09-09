@@ -1,11 +1,11 @@
 import { asc } from 'drizzle-orm';
 
 import { MAX_ATTEMPTS } from './backoff';
-import { drainOutbox, enqueueRoutineUpdate, type OutboxClient } from './outbox';
+import { drainOutbox, enqueueRoutineUpdate, saveRoutineTitle, type OutboxClient } from './outbox';
 import { toRoutineRow } from './mappers';
 import { buildRoutine, createTestDatabase } from './test-support';
 
-import { outbox, type SyncDatabase } from '@/db/schema';
+import { outbox, routines, type SyncDatabase } from '@/db/schema';
 
 function readQueue(db: SyncDatabase) {
   return db.select().from(outbox).orderBy(asc(outbox.id)).all();
@@ -54,6 +54,34 @@ describe('enqueueRoutineUpdate', () => {
     await drainOutbox(db, client);
 
     expect(client.updated).toEqual(['b', 'a']);
+  });
+});
+
+describe('saveRoutineTitle', () => {
+  it('should prefix a title that Hevy has not seen the guard on', () => {
+    const db = createTestDatabase();
+
+    saveRoutineTitle(db, toRoutineRow(buildRoutine()), 'Upper Body B');
+
+    expect(readQueue(db)[0].payload.title).toBe('[TEST] Upper Body B');
+  });
+
+  it('should not stack the prefix on a title that already carries it', () => {
+    const db = createTestDatabase();
+
+    saveRoutineTitle(db, toRoutineRow(buildRoutine()), '[TEST] Upper Body B');
+
+    expect(readQueue(db)[0].payload.title).toBe('[TEST] Upper Body B');
+  });
+
+  it('should rename the local routine straight away, before anything reaches Hevy', () => {
+    const db = createTestDatabase();
+    const routine = toRoutineRow(buildRoutine());
+
+    db.insert(routines).values(routine).run();
+    saveRoutineTitle(db, routine, 'Upper Body B');
+
+    expect(db.select().from(routines).all()[0].title).toBe('[TEST] Upper Body B');
   });
 });
 

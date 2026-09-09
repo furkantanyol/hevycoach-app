@@ -1,23 +1,17 @@
-import { Link } from 'expo-router';
 import { StyleSheet } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 
-export default function HomeScreen() {
+/** Sync is iOS-only: the web bundle has no SQLite, so it never imports the sync feature. */
+export default function SyncWebScreen() {
   return (
     <ThemedView style={styles.container}>
-      <ThemedText type="title">HevyCoach</ThemedText>
+      <ThemedText type="subtitle">iOS only</ThemedText>
       <ThemedText themeColor="textSecondary">
-        Your Hevy history in, next week&apos;s routines out.
+        Offline sync stores your history in SQLite on the device. Open HevyCoach on iOS to use it.
       </ThemedText>
-      <Link href="/sync">
-        <ThemedText type="linkPrimary">Sync</ThemedText>
-      </Link>
-      <Link href="/settings">
-        <ThemedText type="linkPrimary">Settings</ThemedText>
-      </Link>
     </ThemedView>
   );
 }
@@ -27,7 +21,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    gap: Spacing.three,
+    gap: Spacing.two,
     padding: Spacing.four,
   },
 });
