@@ -61,7 +61,14 @@ surviving a restart is the whole point. See `docs/adr/0002-offline-sync.md`.
 
 ### Airplane-mode demo
 
-On a physical device with a development build:
+Use a **preview** build, not a development one: a dev build fetches its JS from Metro over Wi-Fi,
+so step 6 below cannot work in airplane mode. A preview build embeds the bundle and runs offline.
+
+```bash
+pnpm ios:build:preview
+DEVICE_ID=<udid> pnpm ios:install:preview
+```
+
 
 1. Settings, paste the Hevy API key, Save.
 2. Sync, **Sync now**. Workout and set counts climb, the backfill page advances, the cursor fills in.

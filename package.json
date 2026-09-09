@@ -65,7 +65,9 @@
     "ios:device": "SENTRY_DISABLE_AUTO_UPLOAD=true expo run:ios --device",
     "ios:build": "SENTRY_DISABLE_AUTO_UPLOAD=true eas build --profile development --platform ios --local --non-interactive --output ./build/hevycoach-dev.ipa",
     "ios:install": "xcrun devicectl device install app --device \"$DEVICE_ID\" build/hevycoach-dev.ipa",
-    "export:web": "expo export --platform web --output-dir .expo/web-export"
+    "export:web": "expo export --platform web --output-dir .expo/web-export",
+    "ios:build:preview": "SENTRY_DISABLE_AUTO_UPLOAD=true eas build --profile preview --platform ios --local --non-interactive --output ./build/hevycoach-preview.ipa",
+    "ios:install:preview": "xcrun devicectl device install app --device \"$DEVICE_ID\" build/hevycoach-preview.ipa"
   },
   "private": true,
   "jest": {
