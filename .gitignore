@@ -49,3 +49,7 @@ build/
 .env
 .env.*
 supabase/functions/.env
+
+# impeccable session artifacts
+.impeccable/questions/
+.impeccable/review/
