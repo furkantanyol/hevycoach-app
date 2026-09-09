@@ -1,5 +1,12 @@
 import type { RoutineExercise, UpdateRoutineInput } from '@furkantanyol/hevy-client';
-import { index, integer, real, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+import {
+  index,
+  integer,
+  real,
+  sqliteTable,
+  text,
+  type BaseSQLiteDatabase,
+} from 'drizzle-orm/sqlite-core';
 
 export const workouts = sqliteTable(
   'workouts',
@@ -104,6 +111,19 @@ export const syncState = sqliteTable('sync_state', {
   lastSyncAt: integer({ mode: 'timestamp_ms' }),
   lastError: text(),
 });
+
+export const schema = {
+  workouts,
+  workoutExercises,
+  sets,
+  exerciseTemplates,
+  routines,
+  outbox,
+  syncState,
+};
+
+/** The one database type both drivers satisfy: expo-sqlite in the app, better-sqlite3 in tests. */
+export type SyncDatabase = BaseSQLiteDatabase<'sync', unknown, typeof schema>;
 
 export type WorkoutRow = typeof workouts.$inferInsert;
 export type WorkoutExerciseRow = typeof workoutExercises.$inferInsert;

@@ -68,7 +68,29 @@
   },
   "private": true,
   "jest": {
-    "preset": "jest-expo"
+    "projects": [
+      {
+        "displayName": "app",
+        "preset": "jest-expo",
+        "testPathIgnorePatterns": [
+          "<rootDir>/node_modules/",
+          "<rootDir>/src/features/sync/"
+        ]
+      },
+      {
+        "displayName": "sync",
+        "testEnvironment": "node",
+        "testMatch": [
+          "<rootDir>/src/features/sync/**/*.test.ts"
+        ],
+        "transform": {
+          "^.+\\.[jt]sx?$": "babel-jest"
+        },
+        "moduleNameMapper": {
+          "^@/(.*)$": "<rootDir>/src/$1"
+        }
+      }
+    ]
   },
   "packageManager": "pnpm@11.5.0"
 }
