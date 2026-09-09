@@ -61,10 +61,11 @@
     "lint": "expo lint",
     "typecheck": "tsc --noEmit",
     "test": "jest",
-    "validate": "pnpm lint && pnpm typecheck && pnpm test",
+    "validate": "pnpm lint && pnpm typecheck && pnpm test && pnpm export:web",
     "ios:device": "SENTRY_DISABLE_AUTO_UPLOAD=true expo run:ios --device",
     "ios:build": "SENTRY_DISABLE_AUTO_UPLOAD=true eas build --profile development --platform ios --local --non-interactive --output ./build/hevycoach-dev.ipa",
-    "ios:install": "xcrun devicectl device install app --device \"$DEVICE_ID\" build/hevycoach-dev.ipa"
+    "ios:install": "xcrun devicectl device install app --device \"$DEVICE_ID\" build/hevycoach-dev.ipa",
+    "export:web": "expo export --platform web --output-dir .expo/web-export"
   },
   "private": true,
   "jest": {
@@ -74,7 +75,7 @@
         "preset": "jest-expo",
         "testPathIgnorePatterns": [
           "<rootDir>/node_modules/",
-          "<rootDir>/src/features/sync/"
+          "<rootDir>/src/features/sync/.*\\.test\\.ts$"
         ]
       },
       {
