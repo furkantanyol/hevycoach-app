@@ -1,6 +1,7 @@
 import { useNetworkState } from 'expo-network';
+import { Link } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { Button, ScrollView, StyleSheet, Switch, TextInput, View } from 'react-native';
+import { Button, Pressable, ScrollView, StyleSheet, Switch, TextInput, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -9,6 +10,7 @@ import { useAskCoach } from '@/features/coach/use-ask-coach';
 import { buildWeeklyContext, CONTEXT_WINDOW_DAYS } from '@/features/coach/weekly-context';
 import { useHealthExport, type ExportStatus } from '@/features/health/use-health-export';
 import { resetHevyQueries, useRecentWorkouts } from '@/features/hevy/queries';
+import { useProCheck } from '@/features/pro/use-pro-check';
 import { getApiKey, setApiKey } from '@/features/settings/api-key';
 import { useSettingsStore } from '@/features/settings/settings-store';
 import { useTheme } from '@/hooks/use-theme';
@@ -18,7 +20,9 @@ export default function SettingsScreen() {
   const theme = useTheme();
   const exportEnabled = useSettingsStore((state) => state.exportEnabled);
   const setExportEnabled = useSettingsStore((state) => state.setExportEnabled);
+  const setProStatus = useSettingsStore((state) => state.setProStatus);
   const { run, status, result, error } = useHealthExport();
+  const pro = useProCheck();
 
   const [healthAvailable] = useState(() => HealthExport.isAvailable());
   const [draftKey, setDraftKey] = useState('');
@@ -41,13 +45,16 @@ export default function SettingsScreen() {
     initialReadCancelled.current = true;
     await setApiKey(draftKey.trim());
     resetHevyQueries();
+    // A different key may be a different account, so the previous verdict no longer applies.
+    setProStatus('unknown');
     setDraftKey('');
     setKeySaved(Boolean(await getApiKey()));
+    pro.check();
   };
 
   return (
     <ThemedView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content}>
         <View style={styles.section}>
           <ThemedText type="subtitle">Hevy API key</ThemedText>
           <TextInput
@@ -63,6 +70,21 @@ export default function SettingsScreen() {
             style={[styles.input, { color: theme.text, borderColor: theme.backgroundSelected }]}
           />
           <Button title="Save" onPress={saveKey} disabled={draftKey.trim().length === 0} />
+          <ThemedText type="small" themeColor="textSecondary">
+            {describePro({ status: pro.status, checking: pro.checking, keySaved })}
+          </ThemedText>
+          {pro.status === 'unknown' && keySaved ? (
+            <Button title="Check again" onPress={pro.check} disabled={pro.checking} />
+          ) : null}
+        </View>
+
+        <View style={styles.section}>
+          <ThemedText type="subtitle">Training profile</ThemedText>
+          <Link href="/onboarding" asChild>
+            <Pressable accessibilityRole="button" style={styles.linkRow}>
+              <ThemedText type="linkPrimary">Edit your five answers</ThemedText>
+            </Pressable>
+          </Link>
         </View>
 
         <View style={styles.row}>
@@ -127,6 +149,28 @@ function CoachSection({ hasApiKey }: { hasApiKey: boolean }) {
   );
 }
 
+type ProDescription = {
+  readonly status: ReturnType<typeof useProCheck>['status'];
+  readonly checking: boolean;
+  readonly keySaved: boolean;
+};
+
+function describePro({ status, checking, keySaved }: ProDescription): string {
+  if (!keySaved) {
+    return 'The Hevy API is a Pro feature. Save your key and HevyCoach checks it once.';
+  }
+  if (checking) {
+    return 'Checking your Hevy Pro subscription…';
+  }
+  if (status === 'pro') {
+    return 'Hevy Pro confirmed.';
+  }
+  if (status === 'not-pro') {
+    return 'Hevy did not accept that key for the API, which needs Hevy Pro.';
+  }
+  return 'Could not reach Hevy to check your subscription. Nothing is locked — try again.';
+}
+
 type StatusDescription = {
   healthAvailable: boolean;
   status: ExportStatus;
@@ -170,6 +214,7 @@ function describeCoach({ status, error, workoutsError }: CoachDescription): stri
 }
 
 const ANSWER_MIN_HEIGHT = 96;
+const MIN_TAP_TARGET = 44;
 
 const styles = StyleSheet.create({
   container: {
@@ -186,6 +231,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+  },
+  linkRow: {
+    minHeight: MIN_TAP_TARGET,
+    justifyContent: 'center',
   },
   input: {
     borderWidth: 1,

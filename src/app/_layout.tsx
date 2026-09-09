@@ -10,6 +10,7 @@ import {
 import { useEffect } from 'react';
 import { useColorScheme } from 'react-native';
 
+import { useScreenAnimation } from '@/hooks/use-screen-animation';
 import { persister, queryClient, startOnlineWatch } from '@/lib/query-client';
 
 const navigationIntegration = Sentry.reactNavigationIntegration();
@@ -22,9 +23,14 @@ Sentry.init({
   integrations: [navigationIntegration],
 });
 
+/**
+ * The four sections live behind the tab bar. Onboarding and the Pro gate sit outside it: both are
+ * whole-app states rather than places, and `(tabs)/_layout` redirects into them.
+ */
 function RootLayout() {
   const colorScheme = useColorScheme();
   const navigationRef = useNavigationContainerRef();
+  const animation = useScreenAnimation();
 
   useEffect(() => {
     navigationIntegration.registerNavigationContainer(navigationRef);
@@ -35,9 +41,10 @@ function RootLayout() {
   return (
     <PersistQueryClientProvider client={queryClient} persistOptions={{ persister }}>
       <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-        <Stack>
-          <Stack.Screen name="index" options={{ title: 'HevyCoach' }} />
-          <Stack.Screen name="settings" options={{ title: 'Settings' }} />
+        <Stack screenOptions={{ animation }}>
+          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen name="onboarding" options={{ title: 'Your training' }} />
+          <Stack.Screen name="pro" options={{ title: 'Hevy Pro' }} />
         </Stack>
       </ThemeProvider>
     </PersistQueryClientProvider>

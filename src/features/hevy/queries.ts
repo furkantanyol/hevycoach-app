@@ -1,4 +1,11 @@
-import { MAX_PAGE_SIZE, type HevyClient, type Workout } from '@furkantanyol/hevy-client';
+import {
+  fetchAll,
+  MAX_PAGE_SIZE,
+  type ExerciseHistoryEntry,
+  type HevyClient,
+  type Routine,
+  type Workout,
+} from '@furkantanyol/hevy-client';
 import { useQuery } from '@tanstack/react-query';
 
 import { hevyClient } from './client';
@@ -16,6 +23,9 @@ const HEVY_SCOPE = ['hevy'] as const;
 
 export const hevyQueryKeys = {
   recentWorkouts: (days: number) => [...HEVY_SCOPE, 'workouts', 'recent', days] as const,
+  routines: () => [...HEVY_SCOPE, 'routines'] as const,
+  exerciseHistory: (exerciseTemplateId: string) =>
+    [...HEVY_SCOPE, 'exercise-history', exerciseTemplateId] as const,
 };
 
 /**
@@ -55,6 +65,34 @@ export function useRecentWorkouts(days: number, { enabled = true }: QueryOptions
   return useQuery({
     queryKey: hevyQueryKeys.recentWorkouts(days),
     queryFn: async () => fetchRecentWorkouts(await hevyClient(), days),
+    staleTime: WORKOUTS_STALE_TIME_MS,
+    enabled,
+  });
+}
+
+async function fetchRoutines(client: HevyClient): Promise<Routine[]> {
+  return fetchAll(async (page) => {
+    const listed = await client.routines.list({ page, pageSize: MAX_PAGE_SIZE });
+    return { page: listed.page, page_count: listed.page_count, items: listed.routines };
+  });
+}
+
+/** The routines the user already has in Hevy, with the targets Hevy itself stores. */
+export function useRoutines({ enabled = true }: QueryOptions = {}) {
+  return useQuery({
+    queryKey: hevyQueryKeys.routines(),
+    queryFn: async () => fetchRoutines(await hevyClient()),
+    staleTime: WORKOUTS_STALE_TIME_MS,
+    enabled,
+  });
+}
+
+/** One entry per logged set for a single exercise, newest workout first. */
+export function useExerciseHistory(exerciseTemplateId: string, { enabled = true }: QueryOptions = {}) {
+  return useQuery({
+    queryKey: hevyQueryKeys.exerciseHistory(exerciseTemplateId),
+    queryFn: async (): Promise<ExerciseHistoryEntry[]> =>
+      (await hevyClient()).exerciseHistory.get(exerciseTemplateId),
     staleTime: WORKOUTS_STALE_TIME_MS,
     enabled,
   });
