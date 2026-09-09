@@ -60,14 +60,14 @@ export default function SettingsScreen() {
             placeholder={
               keySaved ? 'Key saved — paste a new one to replace it' : 'Paste your API key'
             }
-            placeholderTextColor={theme.textSecondary}
+            placeholderTextColor={theme.inkSecondary}
             secureTextEntry
             autoCapitalize="none"
             autoCorrect={false}
-            style={[styles.input, { color: theme.text, borderColor: theme.backgroundSelected }]}
+            style={[styles.input, { color: theme.ink, borderColor: theme.rule }]}
           />
           <Button title="Save" onPress={saveKey} disabled={draftKey.trim().length === 0} />
-          <ThemedText type="small" themeColor="textSecondary">
+          <ThemedText type="small" themeColor="inkSecondary">
             {describePro({ status: pro.status, checking: pro.checking, keySaved })}
           </ThemedText>
           {pro.status === 'unknown' && keySaved ? (
@@ -99,7 +99,7 @@ export default function SettingsScreen() {
           disabled={!exportEnabled || !keySaved || !healthAvailable || status === 'running'}
         />
 
-        <ThemedText type="small" themeColor="textSecondary">
+        <ThemedText type="small" themeColor="inkSecondary">
           {describeStatus({ healthAvailable, status, result, error })}
         </ThemedText>
       </ScrollView>

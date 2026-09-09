@@ -45,8 +45,8 @@ export default function TabsLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: theme.text,
-        tabBarInactiveTintColor: theme.textSecondary,
+        tabBarActiveTintColor: theme.ink,
+        tabBarInactiveTintColor: theme.inkSecondary,
       }}
     >
       <Tabs.Screen name="(today)" options={{ title: 'Today', tabBarIcon: TODAY_ICON }} />

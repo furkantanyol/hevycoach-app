@@ -1,6 +1,6 @@
 import { Stack } from 'expo-router';
 
-import { useScreenAnimation } from '@/hooks/use-screen-animation';
+import { useScreenAnimation } from '@/components/motion';
 
 /** Lift detail is pushed inside this stack, so the tab bar stays and Back returns to Review. */
 export default function ReviewLayout() {

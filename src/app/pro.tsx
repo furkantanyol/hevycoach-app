@@ -23,7 +23,7 @@ export default function ProScreen() {
     <ThemedView style={Screen.container}>
       <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={Screen.scrollContent}>
         <ThemedText type="subtitle">HevyCoach needs Hevy Pro</ThemedText>
-        <ThemedText themeColor="textSecondary">
+        <ThemedText themeColor="inkSecondary">
           HevyCoach reads your training and writes routines through the Hevy API, and Hevy only
           opens that API to Pro accounts. Upgrade in Hevy, then check again here.
         </ThemedText>

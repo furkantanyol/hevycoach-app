@@ -39,7 +39,7 @@ export function CoachSection({ workouts, workoutsError }: CoachSectionProps) {
         }}
         disabled={!canAsk}
       />
-      <ThemedText type="small" themeColor="textSecondary">
+      <ThemedText type="small" themeColor="inkSecondary">
         {describeCoach({ status, error, workoutsError, offline })}
       </ThemedText>
       <TextInput
@@ -47,8 +47,8 @@ export function CoachSection({ workouts, workoutsError }: CoachSectionProps) {
         editable={false}
         multiline
         placeholder="The coach's answer will appear here."
-        placeholderTextColor={theme.textSecondary}
-        style={[styles.answer, { color: theme.text }]}
+        placeholderTextColor={theme.inkSecondary}
+        style={[styles.answer, { color: theme.ink }]}
       />
     </View>
   );

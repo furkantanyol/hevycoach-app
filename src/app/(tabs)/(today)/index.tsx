@@ -2,7 +2,7 @@ import type { RoutineExercise } from '@furkantanyol/hevy-client';
 import { FlashList } from '@shopify/flash-list';
 import { StyleSheet, View } from 'react-native';
 
-import { Appear } from '@/components/appear';
+import { Settle } from '@/components/motion';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Screen, Spacing } from '@/constants/theme';
@@ -56,12 +56,12 @@ function SessionHeader({ next, status }: { next: NextSession | null; status: str
   return (
     <>
       <StatusLine>{status}</StatusLine>
-      <Appear visible={next !== null} style={styles.header}>
+      <Settle visible={next !== null} style={styles.header}>
         <ThemedText type="subtitle">{next?.routine.title}</ThemedText>
-        <ThemedText type="small" themeColor="textSecondary">
+        <ThemedText type="small" themeColor="inkSecondary">
           {next ? describeOrigin(next) : null}
         </ThemedText>
-      </Appear>
+      </Settle>
     </>
   );
 }
@@ -86,20 +86,20 @@ function ExerciseRow({ exercise }: { exercise: RoutineExercise }) {
     <View style={styles.row}>
       <ThemedText>{exercise.title}</ThemedText>
       <View style={styles.line}>
-        <ThemedText type="small" themeColor="textSecondary" style={styles.label}>
+        <ThemedText type="small" themeColor="inkSecondary" style={styles.label}>
           Target
         </ThemedText>
         <ThemedText style={styles.valueText}>{describeTargetSets(exercise.sets)}</ThemedText>
       </View>
       <View style={styles.line}>
-        <ThemedText type="small" themeColor="textSecondary" style={styles.label}>
+        <ThemedText type="small" themeColor="inkSecondary" style={styles.label}>
           Last
         </ThemedText>
         <View style={styles.value}>
           {previous ? (
             <>
               <ThemedText>{previous.sets.map(describeLoggedSet).join('   ')}</ThemedText>
-              <ThemedText type="small" themeColor="textSecondary">
+              <ThemedText type="small" themeColor="inkSecondary">
                 {formatDate(previous.startTime)}
               </ThemedText>
             </>

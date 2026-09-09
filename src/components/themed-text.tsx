@@ -25,7 +25,7 @@ const ramps: Record<TextType, TextProps['dynamicTypeRamp']> = {
 
 export function ThemedText({ style, type = 'default', themeColor, ...rest }: ThemedTextProps) {
   const theme = useTheme();
-  const color = theme[themeColor ?? (type === 'linkPrimary' ? 'link' : 'text')];
+  const color = theme[themeColor ?? 'ink'];
 
   return <Text dynamicTypeRamp={ramps[type]} style={[{ color }, styles[type], style]} {...rest} />;
 }

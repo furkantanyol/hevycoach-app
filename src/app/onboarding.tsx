@@ -147,7 +147,7 @@ function Choice<Option extends string | number>({
             onPress={() => onSelect(option)}
             style={[
               styles.option,
-              option === selected ? { backgroundColor: theme.backgroundSelected } : null,
+              option === selected ? { backgroundColor: theme.load1 } : null,
             ]}
           >
             <ThemedText>{describe(option)}</ThemedText>
@@ -175,10 +175,10 @@ function FreeText({ question, value, placeholder, onChangeText }: FreeTextProps)
         value={value}
         onChangeText={onChangeText}
         placeholder={placeholder}
-        placeholderTextColor={theme.textSecondary}
+        placeholderTextColor={theme.inkSecondary}
         maxLength={FREE_TEXT_MAX_LENGTH}
         multiline
-        style={[styles.notes, { color: theme.text, borderColor: theme.backgroundSelected }]}
+        style={[styles.notes, { color: theme.ink, borderColor: theme.rule }]}
       />
     </View>
   );

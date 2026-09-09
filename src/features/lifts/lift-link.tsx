@@ -21,7 +21,7 @@ export function LiftLink({ pathname, templateId, title, detail }: LiftLinkProps)
     <Link href={{ pathname, params: { templateId, title } }} asChild>
       <Pressable accessibilityRole="button" style={styles.row}>
         <ThemedText>{title}</ThemedText>
-        <ThemedText type="small" themeColor="textSecondary">
+        <ThemedText type="small" themeColor="inkSecondary">
           {detail}
         </ThemedText>
       </Pressable>

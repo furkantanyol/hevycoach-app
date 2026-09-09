@@ -1,55 +1,87 @@
 /**
- * The app's colours and spacing. On iOS the colours are the system's own semantic ones, so the OS
- * resolves them per appearance and per accessibility setting (Increase Contrast, Smart Invert);
- * everywhere else there is a hand-written table, because only UIKit ships those colours.
+ * The Block Chart's tokens. Named for their role on a printed programme sheet, not for their
+ * colour: ground is the paper, rules are the ruling, ink is what is written on it, the load ramp
+ * is the band a session is drawn in, and the marker is the highlighter struck across today.
+ *
+ * The colours are committed rather than borrowed from UIKit. A paper-white ground, a hairline
+ * rule and a five-step greyscale ramp are the world itself, and the system's semantic colours
+ * cannot express a ramp. Type is still the system's, so Dynamic Type keeps working.
+ *
+ * Dark mode inverts ground and ink honestly, and the ramp inverts with them: a heavier session is
+ * always more ink than a lighter one, which on dark paper means brighter.
  */
 
-import { Platform, PlatformColor, StyleSheet, type ColorValue } from 'react-native';
+import { StyleSheet } from 'react-native';
 
-import '@/global.css';
+/** Five bands, lightest to darkest. Step 5 is always the heaviest session on screen. */
+export const LOAD_STEPS = [1, 2, 3, 4, 5] as const;
 
-type Palette = {
-  readonly text: ColorValue;
-  readonly background: ColorValue;
-  readonly backgroundSelected: ColorValue;
-  readonly textSecondary: ColorValue;
-  readonly link: ColorValue;
+export type LoadStep = (typeof LOAD_STEPS)[number];
+
+type LoadKey = `load${LoadStep}`;
+
+type Palette = Record<LoadKey, string> & {
+  readonly ground: string;
+  readonly rule: string;
+  readonly ink: string;
+  readonly inkSecondary: string;
+  /** Ink written over the marker. Near-black in both appearances: a highlighter lies behind text. */
+  readonly inkOnMarker: string;
+  readonly marker: string;
 };
 
 export type ThemeColor = keyof Palette;
 
-/** Built only on iOS: `PlatformColor` does not exist in react-native-web. */
-const systemPalette: Palette | null =
-  Platform.OS === 'ios'
-    ? {
-        text: PlatformColor('label'),
-        background: PlatformColor('systemBackground'),
-        backgroundSelected: PlatformColor('systemFill'),
-        textSecondary: PlatformColor('secondaryLabel'),
-        link: PlatformColor('link'),
-      }
-    : null;
+/**
+ * The one chromatic colour in the app, reserved by law for "today" and "you are here". It is the
+ * same value in both appearances because a highlighter glows on dark paper as it does on white.
+ */
+const MARKER = '#E8FF3B';
 
-const hexPalettes = {
+const NEAR_BLACK = '#111111';
+
+export const Colors: { readonly light: Palette; readonly dark: Palette } = {
   light: {
-    text: '#000000',
-    background: '#ffffff',
-    backgroundSelected: '#E0E1E6',
-    textSecondary: '#60646C',
-    link: '#3c87f7',
+    ground: '#FFFFFF',
+    rule: '#C9C9C9',
+    ink: NEAR_BLACK,
+    inkSecondary: '#6E6E6E',
+    inkOnMarker: NEAR_BLACK,
+    marker: MARKER,
+    load1: '#EDEDED',
+    load2: '#D2D2D2',
+    load3: '#ADADAD',
+    load4: '#787878',
+    load5: '#3A3A3A',
   },
   dark: {
-    text: '#ffffff',
-    background: '#000000',
-    backgroundSelected: '#2E3135',
-    textSecondary: '#B0B4BA',
-    link: '#3c87f7',
+    ground: '#0C0C0C',
+    rule: '#3A3A3A',
+    ink: '#F2F2F2',
+    inkSecondary: '#9C9C9C',
+    inkOnMarker: NEAR_BLACK,
+    marker: MARKER,
+    load1: '#1B1B1B',
+    load2: '#2F2F2F',
+    load3: '#4C4C4C',
+    load4: '#7C7C7C',
+    load5: '#BEBEBE',
   },
 } as const;
 
-/** One table per appearance off screen; on iOS both are the same colours, resolved by UIKit. */
-export const Colors: { readonly light: Palette; readonly dark: Palette } =
-  systemPalette === null ? hexPalettes : { light: systemPalette, dark: systemPalette };
+export function loadColor(palette: Palette, step: LoadStep): string {
+  return palette[`load${step}`];
+}
+
+/**
+ * A block chart's premise is that columns of numbers line up, so every figure on screen renders
+ * with this. A misaligned column is a defect.
+ */
+export const Figures = StyleSheet.create({
+  tabular: {
+    fontVariant: ['tabular-nums'],
+  },
+});
 
 export const Spacing = {
   half: 2,

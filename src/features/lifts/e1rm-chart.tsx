@@ -86,7 +86,7 @@ export function OneRepMaxChart({ points }: OneRepMaxChartProps) {
 
   if (first === undefined || last === undefined || points.length < MIN_POINTS) {
     return (
-      <ThemedText type="small" themeColor="textSecondary">
+      <ThemedText type="small" themeColor="inkSecondary">
         Two logged sessions with a load and reps draw a trend. There is one so far.
       </ThemedText>
     );
@@ -100,13 +100,13 @@ export function OneRepMaxChart({ points }: OneRepMaxChartProps) {
 
   return (
     <View style={styles.chart}>
-      <ThemedText type="small" themeColor="textSecondary">
+      <ThemedText type="small" themeColor="inkSecondary">
         {`High ${formatKilograms(highest)} · Low ${formatKilograms(lowest)}`}
       </ThemedText>
 
       <View
         onLayout={onLayout}
-        style={[styles.canvas, { borderColor: theme.backgroundSelected }]}
+        style={[styles.canvas, { borderColor: theme.rule }]}
         accessibilityRole="image"
         accessibilityLabel={`Estimated one rep max across ${points.length} sessions, from ${formatKilograms(first.estimateKg)} on ${formatDate(first.startTime)} to ${formatKilograms(last.estimateKg)} on ${formatDate(last.startTime)}.`}
       >
@@ -117,7 +117,7 @@ export function OneRepMaxChart({ points }: OneRepMaxChartProps) {
             style={[
               styles.segment,
               {
-                backgroundColor: theme.text,
+                backgroundColor: theme.ink,
                 left: segment.left,
                 top: segment.top,
                 width: segment.width,
@@ -130,17 +130,17 @@ export function OneRepMaxChart({ points }: OneRepMaxChartProps) {
           <View
             style={[
               styles.dot,
-              { backgroundColor: theme.text, left: drawn.lastPoint.left, top: drawn.lastPoint.top },
+              { backgroundColor: theme.ink, left: drawn.lastPoint.left, top: drawn.lastPoint.top },
             ]}
           />
         ) : null}
       </View>
 
       <View style={styles.axis}>
-        <ThemedText type="small" themeColor="textSecondary">
+        <ThemedText type="small" themeColor="inkSecondary">
           {formatDate(first.startTime)}
         </ThemedText>
-        <ThemedText type="small" themeColor="textSecondary">
+        <ThemedText type="small" themeColor="inkSecondary">
           {formatDate(last.startTime)}
         </ThemedText>
       </View>

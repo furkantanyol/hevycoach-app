@@ -1,6 +1,6 @@
 import { Stack } from 'expo-router';
 
-import { useScreenAnimation } from '@/hooks/use-screen-animation';
+import { useScreenAnimation } from '@/components/motion';
 
 export default function SettingsLayout() {
   const animation = useScreenAnimation();

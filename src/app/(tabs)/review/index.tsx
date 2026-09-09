@@ -2,7 +2,7 @@ import type { Workout } from '@furkantanyol/hevy-client';
 import { FlashList } from '@shopify/flash-list';
 import { StyleSheet, View } from 'react-native';
 
-import { Appear } from '@/components/appear';
+import { Settle } from '@/components/motion';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Screen, Spacing } from '@/constants/theme';
@@ -135,16 +135,16 @@ type ReviewHeaderProps = {
 
 function ReviewHeader({ sessionCount, offline, library }: ReviewHeaderProps) {
   return (
-    <Appear visible={sessionCount > 0} style={styles.header}>
+    <Settle visible={sessionCount > 0} style={styles.header}>
       {offline}
       <ThemedText type="subtitle">
         {`${sessionCount} ${sessionCount === 1 ? 'session' : 'sessions'}`}
       </ThemedText>
-      <ThemedText type="small" themeColor="textSecondary">
+      <ThemedText type="small" themeColor="inkSecondary">
         {`In the last ${CONTEXT_WINDOW_DAYS} days.`}
       </ThemedText>
       {library}
-    </Appear>
+    </Settle>
   );
 }
 
@@ -161,7 +161,7 @@ function ReviewRow({ row }: { row: Row }) {
     return (
       <View style={styles.groupRow}>
         <ThemedText>{formatMuscleGroup(row.group.muscleGroup)}</ThemedText>
-        <ThemedText themeColor="textSecondary">{`${row.group.workingSets} sets`}</ThemedText>
+        <ThemedText themeColor="inkSecondary">{`${row.group.workingSets} sets`}</ThemedText>
       </View>
     );
   }
@@ -170,7 +170,7 @@ function ReviewRow({ row }: { row: Row }) {
     return (
       <View style={styles.groupRow}>
         <ThemedText>{row.workout.title}</ThemedText>
-        <ThemedText type="small" themeColor="textSecondary">
+        <ThemedText type="small" themeColor="inkSecondary">
           {formatDate(row.workout.start_time)}
         </ThemedText>
       </View>

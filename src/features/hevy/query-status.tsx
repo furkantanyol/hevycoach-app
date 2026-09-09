@@ -23,7 +23,7 @@ export function StatusLine({ children }: { children: string | null }) {
   }
 
   return (
-    <ThemedText type="small" themeColor="textSecondary" accessibilityRole="text">
+    <ThemedText type="small" themeColor="inkSecondary" accessibilityRole="text">
       {children}
     </ThemedText>
   );

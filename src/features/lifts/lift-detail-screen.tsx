@@ -9,7 +9,7 @@ import { describeLoggedSet, formatDate } from './format';
 import { toSessions, type LoggedSession } from './history';
 import { collectNotes, findExerciseTitle, type LiftNote } from './notes';
 
-import { Appear } from '@/components/appear';
+import { Settle } from '@/components/motion';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Screen, Spacing } from '@/constants/theme';
@@ -96,12 +96,12 @@ type LiftHeaderProps = {
 
 function LiftHeader({ visible, trend, notes, offline }: LiftHeaderProps) {
   return (
-    <Appear visible={visible} style={styles.header}>
+    <Settle visible={visible} style={styles.header}>
       {offline}
       <View style={styles.section}>
         <ThemedText>Estimated 1RM</ThemedText>
         <OneRepMaxChart points={trend} />
-        <ThemedText type="small" themeColor="textSecondary">
+        <ThemedText type="small" themeColor="inkSecondary">
           An estimate from your best working set in each session, by the Epley formula. It is not a
           tested max and it is not a target.
         </ThemedText>
@@ -111,7 +111,7 @@ function LiftHeader({ visible, trend, notes, offline }: LiftHeaderProps) {
           <ThemedText>Your notes</ThemedText>
           {notes.map((note) => (
             <View key={`${note.source}-${note.text}`} style={styles.note}>
-              <ThemedText type="small" themeColor="textSecondary">
+              <ThemedText type="small" themeColor="inkSecondary">
                 {note.source}
               </ThemedText>
               <ThemedText>{note.text}</ThemedText>
@@ -120,14 +120,14 @@ function LiftHeader({ visible, trend, notes, offline }: LiftHeaderProps) {
         </View>
       ) : null}
       <ThemedText>History</ThemedText>
-    </Appear>
+    </Settle>
   );
 }
 
 function SessionHeaderRow({ session }: { session: LoggedSession }) {
   return (
     <View style={styles.sessionRow}>
-      <ThemedText type="small" themeColor="textSecondary">
+      <ThemedText type="small" themeColor="inkSecondary">
         {`${formatDate(session.startTime)} · ${session.title}`}
       </ThemedText>
     </View>

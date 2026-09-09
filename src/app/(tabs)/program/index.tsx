@@ -71,7 +71,7 @@ function SessionRow({ routine }: { routine: Routine }) {
   return (
     <View style={styles.sessionRow}>
       <ThemedText type="subtitle">{routine.title}</ThemedText>
-      <ThemedText type="small" themeColor="textSecondary">
+      <ThemedText type="small" themeColor="inkSecondary">
         {`${routine.exercises.length} exercises`}
       </ThemedText>
     </View>
