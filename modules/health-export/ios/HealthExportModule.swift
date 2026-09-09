@@ -12,6 +12,16 @@ import OSLog
 private let syncIdentifierPrefix = "hevy:"
 private let hevyTitleMetadataKey = "HevyWorkoutTitle"
 
+// Apple documents no "this number is estimated" key, and `HKMetadataKeyWasUserEntered` means the
+// user typed it in, which is not true here. `HKObject.metadata` invites custom keys instead, whose
+// values must be `NSString`, `NSNumber` or `NSDate`.
+private let energyEstimatedMetadataKey = "HevyCoachEnergyEstimated"
+private let energyMethodMetadataKey = "HevyCoachEnergyMethod"
+private let estimatedEnergyMetadata: [String: Any] = [
+  energyEstimatedMetadataKey: NSNumber(value: true),
+  energyMethodMetadataKey: "MET"
+]
+
 private let logger = Logger(subsystem: "com.furkantanyol.hevycoach", category: "HealthExport")
 
 private let isoFormatter = ISO8601DateFormatter()
@@ -28,6 +38,8 @@ struct HealthWorkoutRecord: Record {
   @Field var startTime: String = ""
   /// ISO 8601 timestamp.
   @Field var endTime: String = ""
+  /// Estimated active energy in kilocalories; nil or non-positive means nothing is written.
+  @Field var energyKcal: Double? = nil
   /// Monotonic version; a higher value replaces an already-exported workout with the same id.
   @Field var version: Int = 0
 }
@@ -56,6 +68,12 @@ internal final class InvalidTimestampException: GenericException<String> {
   }
 }
 
+internal final class EnergySampleRejectedException: Exception {
+  override var reason: String {
+    "Apple Health rejected the estimated energy sample"
+  }
+}
+
 public class HealthExportModule: Module {
   private let healthStore = HKHealthStore()
 
@@ -69,8 +87,13 @@ public class HealthExportModule: Module {
     AsyncFunction("requestAuthorization") { () async throws -> Bool in
       try self.assertAvailable()
       let workoutType = HKObjectType.workoutType()
+      // Active energy is its own share grant; asking for it with the workout keeps it to one prompt.
+      let energyType = HKQuantityType(.activeEnergyBurned)
       // Read access is needed for the de-duplication query in `exportWorkouts`.
-      try await self.healthStore.requestAuthorization(toShare: [workoutType], read: [workoutType])
+      try await self.healthStore.requestAuthorization(
+        toShare: [workoutType, energyType],
+        read: [workoutType, energyType]
+      )
       return self.healthStore.authorizationStatus(for: workoutType) == .sharingAuthorized
     }
 
@@ -146,7 +169,25 @@ public class HealthExportModule: Module {
     }
   }
 
+  /// `HKWorkoutBuilder.add(_:)` ships no `async` overlay, so it is bridged like the query above.
+  private func add(_ samples: [HKSample], to builder: HKWorkoutBuilder) async throws {
+    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+      builder.add(samples) { succeeded, error in
+        if let error {
+          continuation.resume(throwing: error)
+        } else if succeeded {
+          continuation.resume()
+        } else {
+          continuation.resume(throwing: EnergySampleRejectedException())
+        }
+      }
+    }
+  }
+
   private func save(_ workout: HealthWorkoutRecord, as identifier: String) async throws {
+    let start = try parseTimestamp(workout.startTime)
+    let end = try parseTimestamp(workout.endTime)
+
     let configuration = HKWorkoutConfiguration()
     configuration.activityType = .traditionalStrengthTraining
 
@@ -155,15 +196,34 @@ public class HealthExportModule: Module {
       configuration: configuration,
       device: .local()
     )
-    try await builder.beginCollection(at: parseTimestamp(workout.startTime))
+    try await builder.beginCollection(at: start)
+
     // Sync identifier and version must be set together; a higher version replaces the stored workout.
-    try await builder.addMetadata([
+    var metadata: [String: Any] = [
       HKMetadataKeySyncIdentifier: identifier,
       HKMetadataKeySyncVersion: NSNumber(value: workout.version),
       HKMetadataKeyExternalUUID: workout.id,
       hevyTitleMetadataKey: workout.title
-    ])
-    try await builder.endCollection(at: parseTimestamp(workout.endTime))
+    ]
+
+    // `HKWorkout.totalEnergyBurned` is deprecated, so energy goes in as its own sample: that is what
+    // `HKWorkout.statistics(for:)` reads back and what the Move ring counts. Samples belong between
+    // `beginCollection` and `finishWorkout`. The workout carries the same tags so a reader that
+    // never looks at the samples still learns the energy was estimated.
+    if let energyKcal = workout.energyKcal, energyKcal > 0 {
+      let energy = HKQuantitySample(
+        type: HKQuantityType(.activeEnergyBurned),
+        quantity: HKQuantity(unit: .kilocalorie(), doubleValue: energyKcal),
+        start: start,
+        end: end,
+        metadata: estimatedEnergyMetadata
+      )
+      try await add([energy], to: builder)
+      metadata.merge(estimatedEnergyMetadata) { existing, _ in existing }
+    }
+
+    try await builder.addMetadata(metadata)
+    try await builder.endCollection(at: end)
     // `finishWorkout` returns nil on success while the device is locked, which is not an error.
     _ = try await builder.finishWorkout()
   }
