@@ -94,6 +94,12 @@ export async function runSync(db: SyncDatabase, client: SyncClient): Promise<Syn
 
     summary.sent = drained.sent;
 
+    if (drained.status === 'offline') {
+      summary.status = 'offline';
+
+      return summary;
+    }
+
     await refreshTemplatesIfStale(db, client);
     await refreshRoutines(db, client, drained.pending);
 

@@ -1,5 +1,5 @@
 import { HevyNetworkError, type HevyClient } from '@furkantanyol/hevy-client';
-import { and, asc, eq, lt, lte } from 'drizzle-orm';
+import { and, asc, eq, lt } from 'drizzle-orm';
 
 import { MAX_ATTEMPTS, nextAttemptDelayMs } from './backoff';
 import { toRoutineUpdateInput } from './mappers';
@@ -15,6 +15,8 @@ export type OutboxClient = { routines: Pick<HevyClient['routines'], 'update'> };
 const TEST_PREFIX = '[TEST]';
 
 export type DrainSummary = {
+  /** `offline` means the drain stopped without blaming any row for it. */
+  status: 'drained' | 'offline';
   sent: number;
   failed: number;
   pending: number;
@@ -57,38 +59,44 @@ export function saveRoutineTitle(db: SyncDatabase, routine: RoutineRow, title: s
 }
 
 /**
- * Sends queued writes oldest first, one at a time. The first failure stops the drain: a later write
- * must never overtake an earlier one, and whatever knocked this row back will knock the next one
- * back too.
+ * Sends queued writes oldest first, one at a time. Anything that stops the head of the queue stops
+ * the whole queue — a failure, or a row still serving its backoff — because a later write must
+ * never overtake an earlier one.
  */
 export async function drainOutbox(db: SyncDatabase, client: OutboxClient): Promise<DrainSummary> {
-  const ready = db
+  // Dead rows are stepped over rather than blocking: they will never be sent, so waiting on one
+  // would freeze the queue for good.
+  const queue = db
     .select()
     .from(outbox)
-    .where(and(lt(outbox.attempts, MAX_ATTEMPTS), lte(outbox.nextAttemptAt, new Date())))
+    .where(lt(outbox.attempts, MAX_ATTEMPTS))
     .orderBy(asc(outbox.id))
     .all();
 
   let sent = 0;
 
-  for (const row of ready) {
+  for (const row of queue) {
+    if (row.nextAttemptAt > new Date()) {
+      break;
+    }
+
     try {
       await client.routines.update(row.entityId, row.payload);
       db.delete(outbox).where(eq(outbox.id, row.id)).run();
       sent += 1;
     } catch (caught) {
-      // Being offline is not this row's fault, so it keeps its attempts and runSync reports it.
+      // Being offline is not this row's fault, so it keeps its attempts and its place.
       if (caught instanceof HevyNetworkError) {
-        throw caught;
+        return { status: 'offline', sent, failed: 0, ...countQueue(db) };
       }
 
       recordFailure(db, row, caught);
 
-      return { sent, failed: 1, ...countQueue(db) };
+      return { status: 'drained', sent, failed: 1, ...countQueue(db) };
     }
   }
 
-  return { sent, failed: 0, ...countQueue(db) };
+  return { status: 'drained', sent, failed: 0, ...countQueue(db) };
 }
 
 function recordFailure(db: SyncDatabase, row: OutboxRow, caught: unknown): void {
