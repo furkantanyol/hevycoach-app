@@ -61,13 +61,16 @@
     "lint": "expo lint",
     "typecheck": "tsc --noEmit",
     "test": "jest",
-    "validate": "pnpm lint && pnpm typecheck && pnpm test && pnpm export:web",
+    "validate": "pnpm lint && pnpm lint:functions && pnpm typecheck && pnpm typecheck:functions && pnpm test && pnpm test:functions && pnpm export:web",
     "ios:device": "SENTRY_DISABLE_AUTO_UPLOAD=true expo run:ios --device",
     "ios:build": "SENTRY_DISABLE_AUTO_UPLOAD=true eas build --profile development --platform ios --local --non-interactive --output ./build/hevycoach-dev.ipa",
     "ios:install": "xcrun devicectl device install app --device \"$DEVICE_ID\" build/hevycoach-dev.ipa",
     "export:web": "expo export --platform web --output-dir .expo/web-export",
     "ios:build:preview": "SENTRY_DISABLE_AUTO_UPLOAD=true eas build --profile preview --platform ios --local --non-interactive --output ./build/hevycoach-preview.ipa",
-    "ios:install:preview": "xcrun devicectl device install app --device \"$DEVICE_ID\" build/hevycoach-preview.ipa"
+    "ios:install:preview": "xcrun devicectl device install app --device \"$DEVICE_ID\" build/hevycoach-preview.ipa",
+    "lint:functions": "deno lint --config supabase/functions/deno.json supabase/functions",
+    "typecheck:functions": "deno check --config supabase/functions/coach/deno.json supabase/functions/coach/index.ts && deno check --config supabase/functions/webhook/deno.json supabase/functions/webhook/index.ts",
+    "test:functions": "deno test --config supabase/functions/deno.json supabase/functions"
   },
   "private": true,
   "jest": {
@@ -77,7 +80,8 @@
         "preset": "jest-expo",
         "testPathIgnorePatterns": [
           "<rootDir>/node_modules/",
-          "<rootDir>/src/features/sync/.*\\.test\\.ts$"
+          "<rootDir>/src/features/sync/.*\\.test\\.ts$",
+          "<rootDir>/supabase/"
         ]
       },
       {
@@ -91,7 +95,10 @@
         },
         "moduleNameMapper": {
           "^@/(.*)$": "<rootDir>/src/$1"
-        }
+        },
+        "testPathIgnorePatterns": [
+          "<rootDir>/supabase/"
+        ]
       }
     ]
   },

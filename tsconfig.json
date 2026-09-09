@@ -18,6 +18,9 @@
       "jest"
     ]
   },
+  "exclude": [
+    "supabase"
+  ],
   "include": [
     "**/*.ts",
     "**/*.tsx",
