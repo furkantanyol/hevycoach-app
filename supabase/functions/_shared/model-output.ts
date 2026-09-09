@@ -19,6 +19,10 @@ import {
  * this shape to put a load, a set count or a rep range, and anything it invents
  * anyway — an unexpected field, or an exercise template id the request never
  * offered — rejects the whole response rather than travelling to a device.
+ *
+ * The free-text fields are the one place a number could still appear, so they
+ * are scanned rather than trusted: a rationale reading "3 sets of 8" rejects the
+ * response the same way an unoffered template id does.
  */
 
 export type ExerciseRole = 'primary' | 'secondary' | 'accessory';
@@ -30,6 +34,22 @@ const MAX_BLOCK_WEEKS = 12;
 const MAX_SESSIONS = 14;
 const MAX_EXERCISES_PER_SESSION = 20;
 const MAX_PROSE_LENGTH = 4_000;
+
+/**
+ * Units and prescriptions the rules engine owns. A digit on either side of one
+ * of these — "87.5kg", "RPE 8", "3 sets of 8", "5x5", "80%" — is a number the
+ * model was told never to state.
+ */
+const UNIT_WORDS = 'kg|kgs|lb|lbs|pounds?|kilos?|reps?|sets?|rpe|rir';
+const PRESCRIBED_NUMBER = new RegExp(
+  [
+    `\\d\\s*(?:${UNIT_WORDS})\\b`,
+    `\\b(?:${UNIT_WORDS})\\s*\\d`,
+    '\\d\\s*%',
+    '\\d\\s*[x\u00d7]\\s*\\d',
+  ].join('|'),
+  'i',
+);
 
 export interface ProgramBlock {
   readonly name: string;
@@ -62,6 +82,23 @@ const BLOCK_KEYS = ['name', 'weeks', 'sessionsPerWeek'];
 const SESSION_KEYS = ['name', 'focus', 'exercises'];
 const EXERCISE_KEYS = ['exerciseTemplateId', 'role'];
 const PROGRAM_RESPONSE_KEYS = ['block', 'sessions', 'rationale'];
+
+/**
+ * Reads a free-text field and rejects it if it states a number the deterministic
+ * rules engine owns. The system prompt forbids those numbers; this is the part
+ * that enforces it.
+ */
+function readProse(
+  record: Readonly<Record<string, unknown>>,
+  key: string,
+): Validated<string> {
+  const text = readText(record, key, MAX_PROSE_LENGTH);
+  if (!text.ok) return text;
+  if (PRESCRIBED_NUMBER.test(text.value)) {
+    return invalid(`${key} states a number the rules engine owns`);
+  }
+  return text;
+}
 
 function parseBlock(value: unknown): Validated<ProgramBlock> {
   if (!isRecord(value)) {
@@ -156,7 +193,7 @@ export function parseProgramResponse(
     if (!session.ok) return session;
     sessions.push(session.value);
   }
-  const rationale = readText(value, 'rationale', MAX_PROSE_LENGTH);
+  const rationale = readProse(value, 'rationale');
   if (!rationale.ok) return rationale;
   return { ok: true, value: { block: block.value, sessions, rationale: rationale.value } };
 }
@@ -169,7 +206,7 @@ export function parseExplainResponse(value: unknown): Validated<ExplainResponse>
   if (extra !== null) {
     return invalid(`response has unexpected field ${extra}`);
   }
-  const explanation = readText(value, 'explanation', MAX_PROSE_LENGTH);
+  const explanation = readProse(value, 'explanation');
   if (!explanation.ok) return explanation;
   return { ok: true, value: { explanation: explanation.value } };
 }
@@ -178,6 +215,10 @@ export function parseExplainResponse(value: unknown): Validated<ExplainResponse>
  * The schema handed to the model. It carries no weight, set count or rep range,
  * which is the point: the shape the model is allowed to return has nowhere to
  * put a number the rules engine owns.
+ *
+ * Bounds live in descriptions rather than in `minimum`, `maximum` or `maxItems`:
+ * the structured-output API rejects those keywords with a 400, and the parsers
+ * above enforce the same ranges on the way back in anyway.
  */
 export const PROGRAM_OUTPUT_SCHEMA: Readonly<Record<string, unknown>> = {
   type: 'object',
@@ -186,11 +227,14 @@ export const PROGRAM_OUTPUT_SCHEMA: Readonly<Record<string, unknown>> = {
       type: 'object',
       properties: {
         name: { type: 'string' },
-        weeks: { type: 'integer', minimum: MIN_BLOCK_WEEKS, maximum: MAX_BLOCK_WEEKS },
+        weeks: {
+          type: 'integer',
+          description: `How long the block runs, from ${MIN_BLOCK_WEEKS} to ${MAX_BLOCK_WEEKS} weeks.`,
+        },
         sessionsPerWeek: {
           type: 'integer',
-          minimum: MIN_DAYS_PER_WEEK,
-          maximum: MAX_DAYS_PER_WEEK,
+          description:
+            `How many sessions a week, from ${MIN_DAYS_PER_WEEK} to ${MAX_DAYS_PER_WEEK}.`,
         },
       },
       required: ['name', 'weeks', 'sessionsPerWeek'],
@@ -198,7 +242,7 @@ export const PROGRAM_OUTPUT_SCHEMA: Readonly<Record<string, unknown>> = {
     },
     sessions: {
       type: 'array',
-      maxItems: MAX_SESSIONS,
+      description: `The sessions in the block, at most ${MAX_SESSIONS} of them.`,
       items: {
         type: 'object',
         properties: {
@@ -206,7 +250,8 @@ export const PROGRAM_OUTPUT_SCHEMA: Readonly<Record<string, unknown>> = {
           focus: { type: 'string' },
           exercises: {
             type: 'array',
-            maxItems: MAX_EXERCISES_PER_SESSION,
+            description:
+              `The exercises in this session, at most ${MAX_EXERCISES_PER_SESSION} of them.`,
             items: {
               type: 'object',
               properties: {

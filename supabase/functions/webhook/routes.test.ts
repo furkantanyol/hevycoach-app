@@ -18,7 +18,9 @@ interface RecordedCall {
   readonly args: Readonly<Record<string, unknown>>;
 }
 
-function recordingDatabase(): { database: Database; calls: RecordedCall[] } {
+function recordingDatabase(
+  options: { readonly pushToken?: string } = {},
+): { database: Database; calls: RecordedCall[] } {
   const calls: RecordedCall[] = [];
   const seen = new Set<string>();
   const database: Database = {
@@ -30,11 +32,34 @@ function recordingDatabase(): { database: Database; calls: RecordedCall[] } {
         seen.add(id);
         return Promise.resolve({ data: isNew, error: null });
       }
+      if (name === 'push_token_for_identity') {
+        return Promise.resolve({ data: options.pushToken ?? null, error: null });
+      }
+      if (name === 'claim_notification_slot') {
+        return Promise.resolve({ data: true, error: null });
+      }
       return Promise.resolve({ data: null, error: null });
     },
   };
   return { database, calls };
 }
+
+function failingDatabase(message: string): Database {
+  return { rpc: () => Promise.resolve({ data: null, error: { message } }) };
+}
+
+function recordingFetch(): { fetchImpl: FetchLike; bodies: unknown[] } {
+  const bodies: unknown[] = [];
+  const fetchImpl: FetchLike = (_url, init) => {
+    bodies.push(JSON.parse(String(init.body)));
+    return Promise.resolve(
+      new Response(JSON.stringify({ data: { status: 'ok', id: 'ticket-1' } }), { status: 200 }),
+    );
+  };
+  return { fetchImpl, bodies };
+}
+
+const alwaysRegenerate = () => Promise.resolve(true);
 
 function failingFetch(): FetchLike {
   return () => {
@@ -215,5 +240,87 @@ describe('shouldRegenerate', () => {
 
     assertEquals(response.status, 200);
     assert((await response.json()).notified === false);
+  });
+});
+
+describe('handleWebhookRequest failures', () => {
+  it('should answer 503 when the event cannot be recorded', async () => {
+    const response = await handleWebhookRequest(
+      webhookRequest({ token: SECRET }),
+      dependencies(failingDatabase('connection refused')),
+    );
+
+    assertEquals(response.status, 503);
+  });
+
+  it('should not leak the database error to the caller', async () => {
+    const response = await handleWebhookRequest(
+      webhookRequest({ token: SECRET }),
+      dependencies(failingDatabase('connection refused')),
+    );
+
+    assertEquals((await response.text()).includes('connection refused'), false);
+  });
+});
+
+describe('handleWebhookRequest notification', () => {
+  it('should push once when a regeneration is due', async () => {
+    const { database } = recordingDatabase({ pushToken: 'ExponentPushToken[abc]' });
+    const { fetchImpl, bodies } = recordingFetch();
+
+    const response = await handleWebhookRequest(
+      webhookRequest({ token: SECRET, identity: IDENTITY }),
+      { ...dependencies(database), fetchImpl, shouldRegenerate: alwaysRegenerate },
+    );
+
+    assertEquals(await response.json(), { recorded: true, notified: true });
+    assertEquals(bodies.length, 1);
+    assertEquals((bodies[0] as { data: unknown }).data, { workoutId: 'wk-1' });
+  });
+
+  it('should not push when the delivery carries no identity', async () => {
+    const { database } = recordingDatabase({ pushToken: 'ExponentPushToken[abc]' });
+    const { fetchImpl, bodies } = recordingFetch();
+
+    const response = await handleWebhookRequest(
+      webhookRequest({ token: SECRET }),
+      { ...dependencies(database), fetchImpl, shouldRegenerate: alwaysRegenerate },
+    );
+
+    assertEquals(await response.json(), { recorded: true, notified: false });
+    assertEquals(bodies.length, 0);
+  });
+
+  it('should not push again when Hevy redelivers the same event', async () => {
+    const { database, calls } = recordingDatabase({ pushToken: 'ExponentPushToken[abc]' });
+    const { fetchImpl, bodies } = recordingFetch();
+    const dependency = {
+      ...dependencies(database),
+      fetchImpl,
+      shouldRegenerate: alwaysRegenerate,
+    };
+    await handleWebhookRequest(webhookRequest({ token: SECRET, identity: IDENTITY }), dependency);
+
+    const response = await handleWebhookRequest(
+      webhookRequest({ token: SECRET, identity: IDENTITY }),
+      dependency,
+    );
+
+    assertEquals(await response.json(), { recorded: false, notified: false });
+    assertEquals(bodies.length, 1);
+    assertEquals(calls.filter((call) => call.name === 'claim_notification_slot').length, 1);
+  });
+
+  it('should still report the event as recorded when Expo rejects the push', async () => {
+    const { database } = recordingDatabase({ pushToken: 'ExponentPushToken[abc]' });
+    const rejectingFetch: FetchLike = () => Promise.resolve(new Response('', { status: 500 }));
+
+    const response = await handleWebhookRequest(
+      webhookRequest({ token: SECRET, identity: IDENTITY }),
+      { ...dependencies(database), fetchImpl: rejectingFetch, shouldRegenerate: alwaysRegenerate },
+    );
+
+    assertEquals(response.status, 200);
+    assertEquals(await response.json(), { recorded: true, notified: false });
   });
 });

@@ -1,6 +1,7 @@
 import { assert, assertEquals, assertStringIncludes } from '@std/assert';
 import { describe, it } from '@std/testing/bdd';
 import {
+  parseExplainResponse,
   parseProgramResponse,
   PROGRAM_OUTPUT_SCHEMA,
 } from './model-output.ts';
@@ -130,5 +131,84 @@ describe('PROGRAM_OUTPUT_SCHEMA', () => {
   it('should forbid additional properties at every level', () => {
     const serialised = JSON.stringify(PROGRAM_OUTPUT_SCHEMA);
     assertEquals(serialised.split('"additionalProperties":false').length - 1, 4);
+  });
+});
+
+describe('free text the model returns', () => {
+  const withRationale = (rationale: string) => ({ ...VALID_RESPONSE, rationale });
+
+  it('should accept a rationale that describes intent without a number', () => {
+    assert(parseProgramResponse(withRationale(
+      'Pressing gets the fresh slot because your bench has stalled.',
+    ), TEMPLATE_IDS).ok);
+  });
+
+  it('should reject a rationale that prescribes sets and reps', () => {
+    assertStringIncludes(
+      errorOf(parseProgramResponse(withRationale('Push to 3 sets of 8 here.'), TEMPLATE_IDS)),
+      'rationale',
+    );
+  });
+
+  it('should reject a rationale that names an RPE target', () => {
+    assert(!parseProgramResponse(withRationale('Keep it at RPE 8.'), TEMPLATE_IDS).ok);
+  });
+
+  it('should reject a rationale that names a load', () => {
+    assert(!parseProgramResponse(withRationale('Open at 87.5kg.'), TEMPLATE_IDS).ok);
+  });
+
+  it('should reject a rationale that names a percentage', () => {
+    assert(!parseProgramResponse(withRationale('Work around 80% of your best.'), TEMPLATE_IDS).ok);
+  });
+
+  it('should reject a rationale written as a rep scheme', () => {
+    assert(!parseProgramResponse(withRationale('Squat is 5x5 this block.'), TEMPLATE_IDS).ok);
+  });
+
+  it('should still allow a week count in the rationale', () => {
+    assert(parseProgramResponse(withRationale('The block runs 4 weeks.'), TEMPLATE_IDS).ok);
+  });
+
+  it('should reject an explanation that states a weight', () => {
+    assertStringIncludes(
+      errorOf(parseExplainResponse({ explanation: 'Add 2.5 kg next session.' })),
+      'explanation',
+    );
+  });
+
+  it('should accept an explanation that stays qualitative', () => {
+    assert(parseExplainResponse({ explanation: 'Your bench held because you missed reps.' }).ok);
+  });
+});
+
+describe('PROGRAM_OUTPUT_SCHEMA keywords', () => {
+  /** Keywords the Anthropic structured-output API rejects with a 400. */
+  const UNSUPPORTED = ['minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum', 'multipleOf', 'maxItems'];
+
+  function walk(node: unknown, visit: (record: Record<string, unknown>) => void): void {
+    if (Array.isArray(node)) {
+      for (const entry of node) walk(entry, visit);
+      return;
+    }
+    if (typeof node !== 'object' || node === null) return;
+    const record = node as Record<string, unknown>;
+    visit(record);
+    for (const value of Object.values(record)) walk(value, visit);
+  }
+
+  it('should use no keyword the structured-output API rejects', () => {
+    walk(PROGRAM_OUTPUT_SCHEMA, (record) => {
+      for (const keyword of UNSUPPORTED) {
+        assertEquals(keyword in record, false, `schema uses unsupported keyword ${keyword}`);
+      }
+    });
+  });
+
+  it('should only ever ask for a minItems the API accepts', () => {
+    walk(PROGRAM_OUTPUT_SCHEMA, (record) => {
+      if (!('minItems' in record)) return;
+      assert(record.minItems === 0 || record.minItems === 1, 'minItems must be 0 or 1');
+    });
   });
 });

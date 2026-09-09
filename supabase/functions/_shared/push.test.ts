@@ -47,13 +47,15 @@ function fakeDatabase(
   };
 }
 
+/** Expo answers a single message with a single ticket object, not an array. */
 function recordingFetch(
-  body: unknown = { data: [{ status: 'ok', id: 'ticket-1' }] },
+  body: unknown = { data: { status: 'ok', id: 'ticket-1' } },
+  status = 200,
 ): { fetchImpl: FetchLike; requests: RecordedRequest[] } {
   const requests: RecordedRequest[] = [];
   const fetchImpl: FetchLike = (url, init) => {
     requests.push({ url, init });
-    return Promise.resolve(new Response(JSON.stringify(body), { status: 200 }));
+    return Promise.resolve(new Response(JSON.stringify(body), { status }));
   };
   return { fetchImpl, requests };
 }
@@ -189,5 +191,38 @@ describe('sendCappedPush', () => {
 
     assertEquals(outcomes.map((outcome) => outcome.sent), [true, true, false]);
     assertEquals(requests.length, MAX_NOTIFICATIONS_PER_WINDOW);
+  });
+
+  it('should read the ticket id out of an array of tickets too', async () => {
+    const { fetchImpl } = recordingFetch({ data: [{ status: 'ok', id: 'ticket-2' }] });
+
+    const outcome = await sendCappedPush(
+      MESSAGE,
+      dependencies(fakeDatabase({ token: 'ExponentPushToken[abc]' }), fetchImpl),
+    );
+
+    assertEquals(outcome, { sent: true, ticketId: 'ticket-2' });
+  });
+
+  it('should report a rejection from Expo rather than throwing', async () => {
+    const { fetchImpl } = recordingFetch({ errors: [{ code: 'INTERNAL_SERVER_ERROR' }] }, 500);
+
+    const outcome = await sendCappedPush(
+      MESSAGE,
+      dependencies(fakeDatabase({ token: 'ExponentPushToken[abc]' }), fetchImpl),
+    );
+
+    assertEquals(outcome, { sent: false, reason: 'rejected' });
+  });
+
+  it('should report a rejection when the send never reaches Expo', async () => {
+    const fetchImpl: FetchLike = () => Promise.reject(new Error('network down'));
+
+    const outcome = await sendCappedPush(
+      MESSAGE,
+      dependencies(fakeDatabase({ token: 'ExponentPushToken[abc]' }), fetchImpl),
+    );
+
+    assertEquals(outcome, { sent: false, reason: 'rejected' });
   });
 });

@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { COACH_SYSTEM_PROMPT, wrapCoachingNotes } from './prompt.ts';
+import { COACH_SYSTEM_PROMPT, type UntrustedField, wrapUntrusted } from './prompt.ts';
 
 /**
  * The single seam through which the model is called.
@@ -22,8 +22,11 @@ export interface ModelClient {
 export interface ModelRequest {
   /** Trusted instruction describing the task, written by us. */
   readonly task: string;
-  /** Untrusted free text written by the user. Wrapped, never interpolated raw. */
-  readonly coachingNotes: string;
+  /**
+   * Every piece of free text the client supplied. Fenced as one untrusted
+   * block, never interpolated into the task.
+   */
+  readonly userInput: readonly UntrustedField[];
   /** Structured-output schema, or null for a plain-text answer. */
   readonly schema: Readonly<Record<string, unknown>> | null;
 }
@@ -77,7 +80,7 @@ function describe(error: unknown): string {
 }
 
 async function callModel(client: ModelClient, request: ModelRequest): Promise<string> {
-  const content = [request.task, wrapCoachingNotes(request.coachingNotes)].join('\n\n');
+  const content = [request.task, wrapUntrusted(request.userInput)].join('\n\n');
   try {
     const message = await client.messages.create({
       model: MODEL,

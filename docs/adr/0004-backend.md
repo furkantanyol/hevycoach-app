@@ -93,26 +93,39 @@ Read-then-write would let two concurrent requests both see the same count and
 both decide they are under the limit. The returned count is the caller's own
 position in the window, so the comparison happens once, in the database.
 
-The notification cap works the same way — one statement that inserts only while
-the count inside the rolling seven days is under two, so two concurrent
-webhooks cannot both take the last slot. Both statements live in SQL functions
-in the migration, and the code reaches them through one narrow `Database` seam
-with a single `rpc` method, which is what the tests supply a fake for.
+The notification cap needs a second mechanism. It also inserts only while the
+count inside the rolling seven days is under two, but there is no unique key to
+conflict on there — the count and the insert are separate reads of the same
+table, so under read committed two concurrent claims would both see one row and
+both insert. `claim_notification_slot` therefore takes
+`pg_advisory_xact_lock(hashtext(identity_hash))` first: the lock is held for the
+transaction, so the second claim waits and then counts the first one's committed
+row. Both functions live in the migration, and the code reaches them through one
+narrow `Database` seam with a single `rpc` method, which is what the tests
+supply a fake for. The lock itself has no unit test — that would need a real
+Postgres, and Docker is unavailable here.
 
 The tables are service-role-only. Row level security is enabled on all four with
 no policies at all, so a leaked publishable key reads nothing.
 
-## The untrusted-notes boundary
+## The untrusted-input boundary
 
-There is one free-text field a user controls, and it is treated as data:
+Every free-text field a user controls is treated as data — not just the coaching
+note. Coaching notes, the onboarding answers they typed (experience, equipment,
+constraints), the training history summary and an explain request's context and
+question all reach the model the same way:
 
 - The base system prompt is a constant in `_shared/prompt.ts`. There is no
   user-editable system prompt and no route that accepts one; a request carrying
   an unexpected top-level field is rejected rather than ignored.
-- Notes are wrapped in `<<<UNTRUSTED_USER_COACHING_NOTES>>>` delimiters, and any
-  occurrence of those delimiters inside the notes is replaced first. Without
-  that, a user could close the block early and have the rest of their note read
-  as though it came from us.
+- The task string the routes build carries only values we chose or validated
+  into a closed set: the goal enum, the session count, the explain subject, and
+  the exercise templates the request offered. No field a user typed is
+  interpolated into it.
+- All of that free text is labelled and wrapped in one
+  `<<<UNTRUSTED_USER_INPUT>>>` block, and any occurrence of those delimiters
+  inside it is replaced first. Without that, a user could close the block early
+  and have the rest of their text read as though it came from us.
 - The system prompt states that the fenced text is context, never instruction,
   and that it cannot grant permission to produce numbers, widen the set of
   exercise ids, or change the output format.
@@ -133,17 +146,33 @@ invented id rejects the response with a 502. This is the guard that keeps the
 product's first principle true, and it is the part of the backend most worth
 testing.
 
+The free-text fields are where a number could still slip through, so they are
+scanned rather than trusted: a `rationale` or `explanation` carrying a digit
+next to kg, lb, reps, sets, RPE, RIR, a percentage or a `5x5` rep scheme rejects
+the response with the same 502. A prompt instruction is not an enforcement
+mechanism, and this rule is stated as forbidden rather than discouraged.
+
+The schema itself carries no `minimum`, `maximum` or `maxItems`: the Anthropic
+structured-output API rejects those keywords with a 400, and the request is
+built by hand rather than through the SDK's `jsonSchemaOutputFormat()` helper
+that would strip them. The bounds live in field descriptions, and the parsers
+enforce them on the way back in.
+
 ## `shouldRegenerate()` is a seam, not a policy
 
-The webhook records the event and then asks whether a weekly regeneration is
-due. That function returns `false` and carries a TODO naming Phase D.
+The webhook records the event and, for a first delivery only, asks whether a
+weekly regeneration is due. That function returns `false` and carries a TODO
+naming Phase D. It is injected through `WebhookDependencies` so the notification
+path can be tested against a stub that says yes; a replay short-circuits before
+it, because Hevy retries at least once and re-running the push would send a
+second notification for one workout.
 
 The progression spec has not arrived. Where a training week ends, what counts as
 a stall, when a deload is due — every rule that would answer this question comes
 with it, and inventing one here would put programming logic on the server that
-the rules engine owns. The seam is unit-tested as a seam: the test asserts that
-nothing is pushed while it returns false, so the day it starts returning true
-the notification path is already covered.
+the rules engine owns. The seam is unit-tested as a seam, and the path behind it is
+covered by stubbing it true: the tests assert what gets pushed, that nothing is
+pushed without an identity, and that a redelivery pushes nothing at all.
 
 One gap is worth naming. Hevy's webhook body is `{ id, payload: { workoutId } }`
 and carries no identity, so when regeneration does become real the backend has

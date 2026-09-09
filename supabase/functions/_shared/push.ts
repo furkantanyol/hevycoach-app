@@ -5,9 +5,10 @@ import { callDatabase, type Database } from './db.ts';
  * identity. The product promises a quiet app: at most two informational pushes
  * a week, and nothing that asks the user a question.
  *
- * The cap is claimed in Postgres before anything is sent — a single statement
- * that inserts the row only while the count in the window is under the cap, so
- * two concurrent webhooks cannot both claim the second slot.
+ * The cap is claimed in Postgres before anything is sent — the row is inserted
+ * only while the count in the window is under the cap, and the claim takes a
+ * per-identity advisory lock first, so two concurrent webhooks cannot both take
+ * the second slot.
  */
 
 export const EXPO_PUSH_ENDPOINT = 'https://exp.host/--/api/v2/push/send';
@@ -65,19 +66,22 @@ async function claimNotificationSlot(
   return claimed === true;
 }
 
+/**
+ * Expo answers a single message object with a single ticket object, and an
+ * array of messages with an array of tickets. We always send one message, so
+ * the bare object is the shape that actually comes back — both are read here so
+ * the ticket id survives either.
+ */
 function ticketIdFrom(payload: unknown): string | null {
   if (typeof payload !== 'object' || payload === null) {
     return null;
   }
-  const tickets = (payload as { data?: unknown }).data;
-  if (!Array.isArray(tickets) || tickets.length === 0) {
+  const data = (payload as { data?: unknown }).data;
+  const ticket = Array.isArray(data) ? data[0] : data;
+  if (typeof ticket !== 'object' || ticket === null) {
     return null;
   }
-  const first = tickets[0];
-  if (typeof first !== 'object' || first === null) {
-    return null;
-  }
-  const id = (first as { id?: unknown }).id;
+  const id = (ticket as { id?: unknown }).id;
   return typeof id === 'string' ? id : null;
 }
 
@@ -107,6 +111,10 @@ async function postToExpo(
  * Sends one push if the identity has a registered token and a free slot in the
  * rolling window. The slot is claimed before the send, so a delivery failure
  * costs the user a slot rather than risking a burst of retries.
+ *
+ * An Expo rejection is an outcome, not an exception: the caller is a webhook
+ * that has already recorded the event, and a push that did not go out must not
+ * unwind it.
  */
 export async function sendCappedPush(
   request: PushRequest,
@@ -124,11 +132,15 @@ export async function sendCappedPush(
   if (!claimed) {
     return { sent: false, reason: 'capped' };
   }
-  const ticketId = await postToExpo({
-    to: token,
-    title: request.title,
-    body: request.body,
-    data: request.data ?? {},
-  }, dependencies);
-  return { sent: true, ticketId };
+  try {
+    const ticketId = await postToExpo({
+      to: token,
+      title: request.title,
+      body: request.body,
+      data: request.data ?? {},
+    }, dependencies);
+    return { sent: true, ticketId };
+  } catch {
+    return { sent: false, reason: 'rejected' };
+  }
 }

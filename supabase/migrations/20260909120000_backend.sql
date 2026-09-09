@@ -63,28 +63,34 @@ create table public.notifications_sent (
 create index notifications_sent_identity_sent_at_idx
   on public.notifications_sent (identity_hash, sent_at desc);
 
--- One statement again: the row is inserted only while the count inside the
--- window is under the cap, so two concurrent webhooks cannot both take the last
--- slot. The cutoff is passed in rather than computed here, so the window lives
--- in one place in the code.
+-- The row is inserted only while the count inside the window is under the cap.
+-- Unlike increment_rate_limit there is no unique key to serialise on — the count
+-- and the insert are separate reads of the same table — so under read committed
+-- two concurrent claims would each see the same count and both insert. The
+-- advisory lock is what makes the pair atomic: it is held for the transaction,
+-- so a second claim for the same identity waits and then counts the first one's
+-- committed row. The cutoff is passed in rather than computed here, so the
+-- window lives in one place in the code.
 create function public.claim_notification_slot(
   p_identity_hash text,
   p_kind text,
   p_since timestamptz,
   p_max integer
 ) returns boolean
-language sql
+language plpgsql
 as $$
-  with claimed as (
-    insert into public.notifications_sent (identity_hash, kind)
-    select p_identity_hash, p_kind
-    where (
-      select count(*) from public.notifications_sent
-      where identity_hash = p_identity_hash and sent_at >= p_since
-    ) < p_max
-    returning 1
-  )
-  select exists (select 1 from claimed);
+begin
+  perform pg_advisory_xact_lock(hashtext(p_identity_hash));
+
+  insert into public.notifications_sent (identity_hash, kind)
+  select p_identity_hash, p_kind
+  where (
+    select count(*) from public.notifications_sent
+    where identity_hash = p_identity_hash and sent_at >= p_since
+  ) < p_max;
+
+  return found;
+end;
 $$;
 
 -- Hevy webhook deliveries. The primary key is Hevy's own event id, so a replay

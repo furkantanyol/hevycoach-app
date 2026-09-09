@@ -1,4 +1,4 @@
-import { callDatabase, type Database } from '../_shared/db.ts';
+import { callDatabase, type Database, DatabaseUnavailableError } from '../_shared/db.ts';
 import { bearerToken, identityFromHash, IDENTITY_HEADER, secretsMatch } from '../_shared/identity.ts';
 import { type FetchLike, sendCappedPush } from '../_shared/push.ts';
 import { type HevyWebhookEvent, parseHevyWebhookEvent } from '../_shared/schemas.ts';
@@ -20,6 +20,11 @@ export interface WebhookDependencies {
   /** The shared secret Hevy sends as a bearer token. Never logged. */
   readonly webhookSecret: string | undefined;
   readonly expoAccessToken?: string;
+  /**
+   * Injected so the notification path can be tested before Phase D lands a real
+   * policy. Defaults to the seam below, which always says no.
+   */
+  readonly shouldRegenerate?: (event: HevyWebhookEvent) => Promise<boolean>;
 }
 
 /**
@@ -56,7 +61,8 @@ async function notifyIfDue(
   event: HevyWebhookEvent,
   dependencies: WebhookDependencies,
 ): Promise<boolean> {
-  if (!await shouldRegenerate(event)) {
+  const regenerates = dependencies.shouldRegenerate ?? shouldRegenerate;
+  if (!await regenerates(event)) {
     return false;
   }
   const identityHash = identityFromHash(request.headers.get(IDENTITY_HEADER));
@@ -106,11 +112,25 @@ export async function handleWebhookRequest(
     return json({ error: event.error }, 400);
   }
 
-  const recorded = await callDatabase(dependencies.database, 'record_webhook_event', {
-    p_id: event.value.id,
-    p_workout_id: event.value.workoutId,
-  });
+  let recorded: unknown;
+  try {
+    recorded = await callDatabase(dependencies.database, 'record_webhook_event', {
+      p_id: event.value.id,
+      p_workout_id: event.value.workoutId,
+    });
+  } catch (error) {
+    if (error instanceof DatabaseUnavailableError) {
+      return json({ error: 'the webhook store is unavailable' }, 503);
+    }
+    throw error;
+  }
+  // A replay is a delivery we have already acted on. Hevy retries at least
+  // once, so re-running the notification here would send a second push for one
+  // workout — which is the duplicate the event id exists to prevent.
+  if (recorded !== true) {
+    return json({ recorded: false, notified: false }, 200);
+  }
   const notified = await notifyIfDue(request, event.value, dependencies);
 
-  return json({ recorded: recorded === true, notified }, 200);
+  return json({ recorded: true, notified }, 200);
 }
