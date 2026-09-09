@@ -55,3 +55,8 @@ already in Apple Health at the same or a newer version, so re-running is safe.
 
 HealthKit only writes on a real device — on the simulator the module reports
 itself available but saves will fail.
+
+### Building for a physical iPhone
+
+- Local (preferred): `pnpm ios:device` compiles with the installed Xcode and installs on the connected phone. It needs an Xcode that supports the phone's iOS version; if `xcrun devicectl device info details` reports `ddiServicesAvailable: false`, Xcode cannot install and you must use the cloud build below.
+- Cloud: `eas build --profile development --platform ios`, then install from the link EAS prints. Source-map upload to Sentry is disabled in every profile until `organization`, `project` and a `SENTRY_AUTH_TOKEN` secret are set.
