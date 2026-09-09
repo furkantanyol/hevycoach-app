@@ -1,3 +1,4 @@
+import { applyWorkouts } from './apply';
 import { runDelta, type DeltaClient } from './delta';
 import { readSyncState, writeSyncState } from './sync-state';
 import { buildWorkout, createTestDatabase } from './test-support';
@@ -13,15 +14,40 @@ const CURSOR = '2026-09-09T09:00:00Z';
 describe('runDelta', () => {
   it('should apply upserts and tombstones from the same page', async () => {
     const db = createTestDatabase();
-    const client = clientReturning({
-      upserts: [buildWorkout({ id: 'kept' })],
-      deletes: [{ type: 'deleted', id: 'gone', deleted_at: CURSOR }],
-      cursor: CURSOR,
-    });
 
-    await runDelta(db, client);
+    applyWorkouts(db, [buildWorkout({ id: 'doomed' })]);
+
+    await runDelta(
+      db,
+      clientReturning({
+        upserts: [buildWorkout({ id: 'kept' })],
+        deletes: [{ type: 'deleted', id: 'doomed', deleted_at: CURSOR }],
+        cursor: CURSOR,
+      })
+    );
 
     expect(db.select().from(workouts).all().map((workout) => workout.id)).toEqual(['kept']);
+  });
+
+  it('should roll the tombstones back with the upserts when the batch fails', async () => {
+    const db = createTestDatabase();
+    const broken = buildWorkout({ id: 'broken' });
+
+    applyWorkouts(db, [buildWorkout({ id: 'doomed' })]);
+    broken.exercises = [broken.exercises[0], { ...broken.exercises[0] }];
+
+    await expect(
+      runDelta(
+        db,
+        clientReturning({
+          upserts: [broken],
+          deletes: [{ type: 'deleted', id: 'doomed', deleted_at: CURSOR }],
+          cursor: CURSOR,
+        })
+      )
+    ).rejects.toThrow();
+
+    expect(db.select().from(workouts).all().map((workout) => workout.id)).toEqual(['doomed']);
   });
 
   it('should remove the children of a deleted workout', async () => {

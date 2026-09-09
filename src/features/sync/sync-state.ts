@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm';
 
 import { SYNC_STATE_ID, syncState, type SyncDatabase, type SyncStateRow } from '@/db/schema';
 
-const INITIAL_STATE: SyncStateRow = {
+const INITIAL_STATE: Readonly<SyncStateRow> = Object.freeze({
   id: SYNC_STATE_ID,
   workoutsCursor: null,
   backfillPage: 1,
@@ -11,7 +11,7 @@ const INITIAL_STATE: SyncStateRow = {
   routinesSyncedAt: null,
   lastSyncAt: null,
   lastError: null,
-};
+});
 
 export function readSyncState(db: SyncDatabase): SyncStateRow {
   return db.select().from(syncState).where(eq(syncState.id, SYNC_STATE_ID)).get() ?? INITIAL_STATE;

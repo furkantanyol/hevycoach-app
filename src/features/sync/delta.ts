@@ -10,7 +10,6 @@ export type DeltaClient = { workouts: Pick<HevyClient['workouts'], 'changes'> };
 export type DeltaSummary = {
   upserted: number;
   deleted: number;
-  cursor: string | null;
 };
 
 /**
@@ -39,5 +38,5 @@ export async function runDelta(db: SyncDatabase, client: DeltaClient): Promise<D
     writeSyncState(db, { workoutsCursor: cursor });
   }
 
-  return { upserted: changes.upserts.length, deleted: changes.deletes.length, cursor };
+  return { upserted: changes.upserts.length, deleted: changes.deletes.length };
 }
