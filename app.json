@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "hevycoach-app",
+    "name": "HevyCoach",
     "slug": "hevycoach-app",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -8,7 +8,16 @@
     "scheme": "hevycoachapp",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/expo.icon",
+      "bundleIdentifier": "com.furkantanyol.hevycoach",
+      "infoPlist": {
+        "NSHealthShareUsageDescription": "HevyCoach reads the workouts it has already written to Apple Health so it never adds the same Hevy workout twice.",
+        "NSHealthUpdateUsageDescription": "HevyCoach saves your Hevy workouts to Apple Health so they show up alongside the rest of your activity."
+      },
+      "entitlements": {
+        "com.apple.developer.healthkit": true,
+        "com.apple.developer.healthkit.access": []
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -32,11 +41,23 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 76
         }
+      ],
+      "expo-sqlite",
+      [
+        "@sentry/react-native/expo",
+        {
+          "url": "https://sentry.io/",
+          "organization": "SENTRY_ORG_PLACEHOLDER",
+          "project": "SENTRY_PROJECT_PLACEHOLDER"
+        }
       ]
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "runtimeVersion": {
+      "policy": "fingerprint"
     }
   }
 }
