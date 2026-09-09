@@ -73,8 +73,11 @@ Explicitly undecided, and not to be invented:
 
 - **Progression spec**: progression scheme, stall definition, deload trigger, weekly volume caps per
   muscle group, RPE autoregulation. Arriving from the user. The rules engine cannot be written first.
-- **Design system**: tokens, type scale, dark and light, component set, screen mockups. Arriving from
-  the user. Screens are built against it, not ahead of it.
+- **Design system**: tokens, type scale, dark and light, component set. Decided 2026-09-09: once the
+  six screens are navigable with real data, two or three distinct visual directions are produced with
+  one real screen rendered in each; the owner picks one or rejects all, and the winner becomes
+  DESIGN.md. Until then screens stay unstyled. The visual world is not Hevy's, and Hevy screenshots
+  remain an anti-reference for layout.
 - **Accessibility standard** for the public release. No requirement has been set.
 
 ## Brand Commitments
