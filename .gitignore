@@ -44,3 +44,8 @@ example
 
 # eas build --local output
 build/
+
+# Edge function secrets
+.env
+.env.*
+supabase/functions/.env
