@@ -12,7 +12,10 @@ export const queryClient = new QueryClient({
     // Try the request even when expo-network says offline: its reading can lag reality, and the
     // persisted cache answers most reads anyway. The cost is that a failed fetch pauses its
     // retries instead of erroring, so offline shows up as `fetchStatus: 'paused'`, not `error`.
-    queries: { networkMode: 'offlineFirst', gcTime: ONE_DAY_MS },
+    // The Hevy client already retries 429s (honouring Retry-After), 5xx and network failures with
+    // backoff, so retrying here only multiplies those and makes a missing key or a rejected one
+    // sit behind a spinner for seconds before saying so.
+    queries: { networkMode: 'offlineFirst', gcTime: ONE_DAY_MS, retry: false },
     mutations: { networkMode: 'offlineFirst' },
   },
 });

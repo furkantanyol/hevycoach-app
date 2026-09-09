@@ -4,7 +4,7 @@ import { StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { Screen, Spacing } from '@/constants/theme';
 import { useRoutines } from '@/features/hevy/queries';
 import { QueryStatus } from '@/features/hevy/query-status';
 import { describeTargetSets } from '@/features/lifts/format';
@@ -37,17 +37,18 @@ export default function ProgramScreen() {
   const routines = useRoutines();
   const rows = toRows(routines.data ?? []);
 
+  // The header renders with or without rows, so it is the only place the query's state is said —
+  // and it says it about the rows that are actually there, not about rows it assumes.
   return (
-    <ThemedView style={styles.container}>
+    <ThemedView style={Screen.container}>
       <FlashList
         contentInsetAdjustmentBehavior="automatic"
-        contentContainerStyle={styles.content}
+        contentContainerStyle={Screen.listContent}
         data={rows}
         getItemType={(row) => row.kind}
         keyExtractor={(row) => row.key}
-        ListHeaderComponent={<QueryStatus query={routines} hasRows whenEmpty={NO_ROUTINES} />}
-        ListEmptyComponent={
-          <QueryStatus query={routines} hasRows={false} whenEmpty={NO_ROUTINES} />
+        ListHeaderComponent={
+          <QueryStatus query={routines} hasRows={rows.length > 0} whenEmpty={NO_ROUTINES} />
         }
         renderItem={({ item }) =>
           item.kind === 'session' ? (
@@ -78,12 +79,6 @@ function SessionRow({ routine }: { routine: Routine }) {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  content: {
-    padding: Spacing.four,
-  },
   sessionRow: {
     gap: Spacing.half,
     paddingTop: Spacing.four,

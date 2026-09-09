@@ -4,7 +4,7 @@ import { Button, Pressable, ScrollView, StyleSheet, TextInput, View } from 'reac
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { Screen, Spacing } from '@/constants/theme';
 import {
   DAYS_PER_WEEK_OPTIONS,
   EQUIPMENT_OPTIONS,
@@ -68,8 +68,8 @@ export default function OnboardingScreen() {
   };
 
   return (
-    <ThemedView style={styles.container}>
-      <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content}>
+    <ThemedView style={Screen.container}>
+      <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={Screen.scrollContent}>
         <Choice
           question="What are you training for?"
           options={TRAINING_GOALS}
@@ -185,13 +185,6 @@ function FreeText({ question, value, placeholder, onChangeText }: FreeTextProps)
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  content: {
-    gap: Spacing.four,
-    padding: Spacing.four,
-  },
   section: {
     gap: Spacing.two,
   },

@@ -12,7 +12,7 @@ import { collectNotes, findExerciseTitle, type LiftNote } from './notes';
 import { Appear } from '@/components/appear';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { Screen, Spacing } from '@/constants/theme';
 import { CONTEXT_WINDOW_DAYS } from '@/features/coach/weekly-context';
 import { useExerciseHistory, useRecentWorkouts, useRoutines } from '@/features/hevy/queries';
 import { QueryStatus } from '@/features/hevy/query-status';
@@ -56,11 +56,11 @@ export default function LiftDetailScreen() {
   const knownTitle = title ?? findExerciseTitle(templateId, routines.data ?? [], workouts.data ?? []);
 
   return (
-    <ThemedView style={styles.container}>
+    <ThemedView style={Screen.container}>
       <Stack.Screen options={{ title: knownTitle ?? FALLBACK_TITLE }} />
       <FlashList
         contentInsetAdjustmentBehavior="automatic"
-        contentContainerStyle={styles.content}
+        contentContainerStyle={Screen.listContent}
         data={rows}
         getItemType={(row) => row.kind}
         keyExtractor={(row) => row.key}
@@ -145,12 +145,6 @@ function SetRow({ entry }: { entry: ExerciseHistoryEntry }) {
 const MIN_ROW_HEIGHT = 44;
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  content: {
-    padding: Spacing.four,
-  },
   header: {
     gap: Spacing.four,
     paddingBottom: Spacing.three,

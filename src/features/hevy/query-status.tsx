@@ -13,14 +13,18 @@ type QueryStatusProps = {
 
 /** One line, wherever a screen would otherwise show a spinner that might never resolve. */
 export function QueryStatus({ query, hasRows, whenEmpty }: QueryStatusProps) {
-  const message = describeQueryState(queryState(query, hasRows), whenEmpty);
-  if (message === null) {
+  return <StatusLine>{describeQueryState(queryState(query, hasRows), whenEmpty)}</StatusLine>;
+}
+
+/** The same line, for a screen that reads more than one query and says one thing about them. */
+export function StatusLine({ children }: { children: string | null }) {
+  if (children === null) {
     return null;
   }
 
   return (
     <ThemedText type="small" themeColor="textSecondary" accessibilityRole="text">
-      {message}
+      {children}
     </ThemedText>
   );
 }

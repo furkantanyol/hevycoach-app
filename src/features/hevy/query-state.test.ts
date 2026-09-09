@@ -38,4 +38,14 @@ describe('queryState', () => {
   it('should say nothing at all once there are rows to render', () => {
     expect(describeQueryState(queryState(IDLE, true), 'nothing')).toBeNull();
   });
+
+  it('should say nothing about an empty answer a screen already speaks for', () => {
+    expect(describeQueryState(queryState(IDLE, false), null)).toBeNull();
+  });
+
+  it('should still surface an error on a query whose emptiness says nothing', () => {
+    const state = queryState({ ...IDLE, error: new Error('Hevy rejected the key.') }, false);
+
+    expect(describeQueryState(state, null)).toBe('Hevy rejected the key.');
+  });
 });

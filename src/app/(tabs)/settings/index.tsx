@@ -4,7 +4,7 @@ import { Button, Pressable, ScrollView, StyleSheet, Switch, TextInput, View } fr
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { Screen, Spacing } from '@/constants/theme';
 import { useHealthExport, type ExportStatus } from '@/features/health/use-health-export';
 import { resetHevyQueries } from '@/features/hevy/queries';
 import { useProCheck } from '@/features/pro/use-pro-check';
@@ -50,8 +50,8 @@ export default function SettingsScreen() {
   };
 
   return (
-    <ThemedView style={styles.container}>
-      <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content}>
+    <ThemedView style={Screen.container}>
+      <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={Screen.scrollContent}>
         <View style={styles.section}>
           <ThemedText type="subtitle">Hevy API key</ThemedText>
           <TextInput
@@ -155,13 +155,6 @@ function describeStatus({ healthAvailable, status, result, error }: StatusDescri
 const MIN_TAP_TARGET = 44;
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  content: {
-    gap: Spacing.four,
-    padding: Spacing.four,
-  },
   section: {
     gap: Spacing.two,
   },

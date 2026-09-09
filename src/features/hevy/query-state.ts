@@ -37,8 +37,11 @@ const LOADING = 'Loading from Hevy…';
 const OFFLINE_WITH_ROWS = 'Offline — showing what was last read from Hevy.';
 const OFFLINE_COLD = 'Offline, and nothing has been read from Hevy yet. This fills in on reconnect.';
 
-/** What to put on screen, or null when the data itself is the answer. */
-export function describeQueryState(state: QueryState, whenEmpty: string): string | null {
+/**
+ * What to put on screen, or null when the data itself is the answer — including when an empty
+ * answer is one, as it is for a query whose emptiness a screen already speaks for.
+ */
+export function describeQueryState(state: QueryState, whenEmpty: string | null): string | null {
   switch (state.kind) {
     case 'ready':
       return null;

@@ -3,28 +3,31 @@ import { StyleSheet, Text, type TextProps } from 'react-native';
 import { ThemeColor } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
+type TextType = 'default' | 'title' | 'small' | 'subtitle' | 'linkPrimary';
+
 export type ThemedTextProps = TextProps & {
-  type?: 'default' | 'title' | 'small' | 'subtitle' | 'linkPrimary';
+  type?: TextType;
   themeColor?: ThemeColor;
+};
+
+/**
+ * iOS scales each text style on its own Dynamic Type curve, and those curves diverge at the
+ * accessibility sizes. Naming the ramp each variant belongs to keeps the hierarchy in proportion
+ * with the native large title above it instead of scaling everything by one flat multiplier.
+ */
+const ramps: Record<TextType, TextProps['dynamicTypeRamp']> = {
+  small: 'subheadline',
+  default: 'body',
+  title: 'largeTitle',
+  subtitle: 'title1',
+  linkPrimary: 'subheadline',
 };
 
 export function ThemedText({ style, type = 'default', themeColor, ...rest }: ThemedTextProps) {
   const theme = useTheme();
+  const color = theme[themeColor ?? (type === 'linkPrimary' ? 'link' : 'text')];
 
-  return (
-    <Text
-      style={[
-        { color: theme[themeColor ?? 'text'] },
-        type === 'default' && styles.default,
-        type === 'title' && styles.title,
-        type === 'small' && styles.small,
-        type === 'subtitle' && styles.subtitle,
-        type === 'linkPrimary' && styles.linkPrimary,
-        style,
-      ]}
-      {...rest}
-    />
-  );
+  return <Text dynamicTypeRamp={ramps[type]} style={[{ color }, styles[type], style]} {...rest} />;
 }
 
 const styles = StyleSheet.create({
@@ -51,6 +54,5 @@ const styles = StyleSheet.create({
   linkPrimary: {
     lineHeight: 30,
     fontSize: 14,
-    color: '#3c87f7',
   },
 });

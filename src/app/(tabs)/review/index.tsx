@@ -5,7 +5,7 @@ import { StyleSheet, View } from 'react-native';
 import { Appear } from '@/components/appear';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { Screen, Spacing } from '@/constants/theme';
 import { CoachSection } from '@/features/coach/coach-section';
 import { CONTEXT_WINDOW_DAYS, workoutsWithin } from '@/features/coach/weekly-context';
 import { useExerciseTemplates, useRecentWorkouts } from '@/features/hevy/queries';
@@ -91,10 +91,10 @@ export default function ReviewScreen() {
   const rows = toRows(sessions, groups);
 
   return (
-    <ThemedView style={styles.container}>
+    <ThemedView style={Screen.container}>
       <FlashList
         contentInsetAdjustmentBehavior="automatic"
-        contentContainerStyle={styles.content}
+        contentContainerStyle={Screen.listContent}
         data={rows}
         getItemType={(row) => row.kind}
         keyExtractor={(row) => row.key}
@@ -190,12 +190,6 @@ function ReviewRow({ row }: { row: Row }) {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  content: {
-    padding: Spacing.four,
-  },
   header: {
     gap: Spacing.half,
     paddingBottom: Spacing.three,

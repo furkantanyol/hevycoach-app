@@ -1,9 +1,9 @@
 import { Redirect } from 'expo-router';
-import { Button, Linking, ScrollView, StyleSheet } from 'react-native';
+import { Button, Linking, ScrollView } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { Screen } from '@/constants/theme';
 import { useProCheck } from '@/features/pro/use-pro-check';
 
 const HEVY_PLANS_URL = 'https://hevy.com/plans';
@@ -20,8 +20,8 @@ export default function ProScreen() {
   }
 
   return (
-    <ThemedView style={styles.container}>
-      <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content}>
+    <ThemedView style={Screen.container}>
+      <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={Screen.scrollContent}>
         <ThemedText type="subtitle">HevyCoach needs Hevy Pro</ThemedText>
         <ThemedText themeColor="textSecondary">
           HevyCoach reads your training and writes routines through the Hevy API, and Hevy only
@@ -33,13 +33,3 @@ export default function ProScreen() {
     </ThemedView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  content: {
-    gap: Spacing.four,
-    padding: Spacing.four,
-  },
-});

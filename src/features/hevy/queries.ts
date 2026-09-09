@@ -41,8 +41,6 @@ export function resetHevyQueries(): void {
   void queryClient.resetQueries({ queryKey: HEVY_SCOPE });
 }
 
-type QueryOptions = { readonly enabled?: boolean };
-
 /**
  * Workouts newest first, back to `days` ago — and never fewer than one page, so the most recent
  * session is always in hand even when the window is empty.
@@ -65,12 +63,11 @@ async function fetchRecentWorkouts(client: HevyClient, days: number): Promise<Wo
   }
 }
 
-export function useRecentWorkouts(days: number, { enabled = true }: QueryOptions = {}) {
+export function useRecentWorkouts(days: number) {
   return useQuery({
     queryKey: hevyQueryKeys.recentWorkouts(days),
     queryFn: async () => fetchRecentWorkouts(await hevyClient(), days),
     staleTime: WORKOUTS_STALE_TIME_MS,
-    enabled,
   });
 }
 
@@ -82,12 +79,11 @@ async function fetchRoutines(client: HevyClient): Promise<Routine[]> {
 }
 
 /** The routines the user already has in Hevy, with the targets Hevy itself stores. */
-export function useRoutines({ enabled = true }: QueryOptions = {}) {
+export function useRoutines() {
   return useQuery({
     queryKey: hevyQueryKeys.routines(),
     queryFn: async () => fetchRoutines(await hevyClient()),
     staleTime: WORKOUTS_STALE_TIME_MS,
-    enabled,
   });
 }
 
@@ -95,22 +91,20 @@ export function useRoutines({ enabled = true }: QueryOptions = {}) {
  * The whole exercise library, which is what maps a logged exercise to its muscle group. It is one
  * hundred templates a page, so `listAll` is a handful of requests and then a day of cache.
  */
-export function useExerciseTemplates({ enabled = true }: QueryOptions = {}) {
+export function useExerciseTemplates() {
   return useQuery({
     queryKey: hevyQueryKeys.exerciseTemplates(),
     queryFn: async () => (await hevyClient()).exerciseTemplates.listAll(),
     staleTime: TEMPLATES_STALE_TIME_MS,
-    enabled,
   });
 }
 
 /** One entry per logged set for a single exercise, newest workout first. */
-export function useExerciseHistory(exerciseTemplateId: string, { enabled = true }: QueryOptions = {}) {
+export function useExerciseHistory(exerciseTemplateId: string) {
   return useQuery({
     queryKey: hevyQueryKeys.exerciseHistory(exerciseTemplateId),
     queryFn: async (): Promise<ExerciseHistoryEntry[]> =>
       (await hevyClient()).exerciseHistory.get(exerciseTemplateId),
     staleTime: WORKOUTS_STALE_TIME_MS,
-    enabled,
   });
 }

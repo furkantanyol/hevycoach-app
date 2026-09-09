@@ -5,10 +5,11 @@ import { StyleSheet, View } from 'react-native';
 import { Appear } from '@/components/appear';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { Screen, Spacing } from '@/constants/theme';
 import { CONTEXT_WINDOW_DAYS } from '@/features/coach/weekly-context';
 import { useExerciseHistory, useRecentWorkouts, useRoutines } from '@/features/hevy/queries';
-import { QueryStatus } from '@/features/hevy/query-status';
+import { describeQueryState, queryState } from '@/features/hevy/query-state';
+import { QueryStatus, StatusLine } from '@/features/hevy/query-status';
 import { describeLoggedSet, describeTargetSets, formatDate } from '@/features/lifts/format';
 import { toSessions } from '@/features/lifts/history';
 import { pickNextRoutine, type NextSession } from '@/features/today/next-routine';
@@ -27,37 +28,41 @@ export default function TodayScreen() {
   const next = pickNextRoutine(routines.data ?? [], workouts.data ?? []);
   const exercises = next?.routine.exercises ?? [];
 
+  // Routines decide what is on screen, so they speak first; the workouts read only speaks when it
+  // has something the routines read does not, because a failed one picks the wrong session
+  // silently. Its own emptiness says nothing: a new user has no history, and that is not news.
+  const status =
+    describeQueryState(
+      queryState(routines, exercises.length > 0),
+      next === null ? NO_ROUTINES : `${next.routine.title} has no exercises in Hevy yet.`
+    ) ?? describeQueryState(queryState(workouts, (workouts.data?.length ?? 0) > 0), null);
+
   return (
-    <ThemedView style={styles.container}>
+    <ThemedView style={Screen.container}>
       <FlashList
         contentInsetAdjustmentBehavior="automatic"
-        contentContainerStyle={styles.content}
+        contentContainerStyle={Screen.listContent}
         data={exercises}
         keyExtractor={(exercise) => `${exercise.index}-${exercise.exercise_template_id}`}
-        ListHeaderComponent={<SessionHeader next={next} />}
-        ListEmptyComponent={
-          <QueryStatus
-            query={routines}
-            hasRows={false}
-            whenEmpty={
-              next === null ? NO_ROUTINES : `${next.routine.title} has no exercises in Hevy yet.`
-            }
-          />
-        }
+        ListHeaderComponent={<SessionHeader next={next} status={status} />}
         renderItem={({ item }) => <ExerciseRow exercise={item} />}
       />
     </ThemedView>
   );
 }
 
-function SessionHeader({ next }: { next: NextSession | null }) {
+/** The header renders whether or not there are rows, so what it says is never hidden by them. */
+function SessionHeader({ next, status }: { next: NextSession | null; status: string | null }) {
   return (
-    <Appear visible={next !== null} style={styles.header}>
-      <ThemedText type="subtitle">{next?.routine.title}</ThemedText>
-      <ThemedText type="small" themeColor="textSecondary">
-        {next ? describeOrigin(next) : null}
-      </ThemedText>
-    </Appear>
+    <>
+      <StatusLine>{status}</StatusLine>
+      <Appear visible={next !== null} style={styles.header}>
+        <ThemedText type="subtitle">{next?.routine.title}</ThemedText>
+        <ThemedText type="small" themeColor="textSecondary">
+          {next ? describeOrigin(next) : null}
+        </ThemedText>
+      </Appear>
+    </>
   );
 }
 
@@ -111,12 +116,6 @@ const LABEL_WIDTH = 56;
 const MIN_ROW_HEIGHT = 44;
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  content: {
-    padding: Spacing.four,
-  },
   header: {
     gap: Spacing.two,
     paddingBottom: Spacing.four,
