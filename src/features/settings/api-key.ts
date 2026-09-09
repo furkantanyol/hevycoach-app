@@ -10,7 +10,3 @@ export function getApiKey(): Promise<string | null> {
 export function setApiKey(apiKey: string): Promise<void> {
   return SecureStore.setItemAsync(API_KEY_STORE_KEY, apiKey);
 }
-
-export function clearApiKey(): Promise<void> {
-  return SecureStore.deleteItemAsync(API_KEY_STORE_KEY);
-}

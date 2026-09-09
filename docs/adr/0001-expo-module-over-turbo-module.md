@@ -60,6 +60,10 @@ duplicate.
 - `HKMetadataKeyExternalUUID` carries the raw Hevy id as a tag for anyone
   inspecting the data. It does not de-duplicate on its own and is not used for
   that.
+- Residual gap: HealthKit never reports read-authorization status, so if the
+  user grants write but denies read for Workouts, the dedupe query returns
+  nothing and re-exports fall back to HealthKit's own sync-version replacement
+  (higher version replaces; equal version undocumented). Accepted for now.
 
 ## Consequences
 

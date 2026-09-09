@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button, StyleSheet, Switch, TextInput, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
@@ -20,14 +20,24 @@ export default function SettingsScreen() {
   const [draftKey, setDraftKey] = useState('');
   const [keySaved, setKeySaved] = useState(false);
 
+  const initialReadCancelled = useRef(false);
+
   useEffect(() => {
-    getApiKey().then((apiKey) => setKeySaved(Boolean(apiKey)));
+    getApiKey().then((apiKey) => {
+      if (!initialReadCancelled.current) {
+        setKeySaved(Boolean(apiKey));
+      }
+    });
+    return () => {
+      initialReadCancelled.current = true;
+    };
   }, []);
 
   const saveKey = async () => {
+    initialReadCancelled.current = true;
     await setApiKey(draftKey.trim());
     setDraftKey('');
-    setKeySaved(true);
+    setKeySaved(Boolean(await getApiKey()));
   };
 
   return (
