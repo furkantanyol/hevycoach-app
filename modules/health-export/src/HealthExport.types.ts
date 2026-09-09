@@ -6,6 +6,8 @@ export type HealthWorkout = {
   startTime: string;
   /** ISO 8601 timestamp. */
   endTime: string;
+  /** Estimated active energy in kilocalories; 0 when there is no duration to estimate from. */
+  energyKcal: number;
   /** Monotonic version; a higher value replaces an already-exported workout with the same id. */
   version: number;
 };
