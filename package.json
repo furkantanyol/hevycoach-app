@@ -56,5 +56,6 @@
   "private": true,
   "jest": {
     "preset": "jest-expo"
-  }
+  },
+  "packageManager": "pnpm@11.5.0"
 }

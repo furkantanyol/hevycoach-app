@@ -12,7 +12,8 @@
       "bundleIdentifier": "com.furkantanyol.hevycoach",
       "infoPlist": {
         "NSHealthShareUsageDescription": "HevyCoach reads the workouts it has already written to Apple Health so it never adds the same Hevy workout twice.",
-        "NSHealthUpdateUsageDescription": "HevyCoach saves your Hevy workouts to Apple Health so they show up alongside the rest of your activity."
+        "NSHealthUpdateUsageDescription": "HevyCoach saves your Hevy workouts to Apple Health so they show up alongside the rest of your activity.",
+        "ITSAppUsesNonExemptEncryption": false
       },
       "entitlements": {
         "com.apple.developer.healthkit": true,
