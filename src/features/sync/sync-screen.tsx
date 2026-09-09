@@ -27,7 +27,7 @@ export default function SyncScreen() {
   return (
     <ThemedView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content}>
-        <Row label="Network" value={isConnected ? 'Online' : 'Offline'} />
+        <Row label="Network" value={describeNetwork(isConnected)} />
 
         <View style={styles.section}>
           <ThemedText type="subtitle">Local database</ThemedText>
@@ -66,6 +66,15 @@ export default function SyncScreen() {
       </ScrollView>
     </ThemedView>
   );
+}
+
+/** expo-network reports nothing until its first read resolves, so say so rather than say offline. */
+function describeNetwork(isConnected: boolean | undefined): string {
+  if (isConnected === undefined) {
+    return 'checking…';
+  }
+
+  return isConnected ? 'Online' : 'Offline';
 }
 
 type SyncDescription = Pick<ReturnType<typeof useSync>, 'status' | 'summary' | 'error'>;

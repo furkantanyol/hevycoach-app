@@ -8,6 +8,12 @@ import { outbox, routines, type OutboxRow, type RoutineRow, type SyncDatabase } 
 
 export type OutboxClient = { routines: Pick<HevyClient['routines'], 'update'> };
 
+/**
+ * Guard on every write that leaves the device: until the account owner lifts it, a routine this
+ * app touches is renamed so it is obvious in Hevy which routines came from here.
+ */
+const TEST_PREFIX = '[TEST]';
+
 export type DrainSummary = {
   sent: number;
   failed: number;
@@ -39,12 +45,6 @@ export function enqueueRoutineUpdate(db: SyncDatabase, routine: RoutineRow): voi
       .run();
   });
 }
-
-/**
- * Guard on every write that leaves the device: until the account owner lifts it, a routine this app
- * touches is renamed so it is obvious in Hevy which routines came from here.
- */
-const TEST_PREFIX = '[TEST]';
 
 /** Renames a routine locally and queues the same change for Hevy, in one transaction. */
 export function saveRoutineTitle(db: SyncDatabase, routine: RoutineRow, title: string): void {
