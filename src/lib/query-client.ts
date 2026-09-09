@@ -9,8 +9,9 @@ const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
 export const queryClient = new QueryClient({
   defaultOptions: {
-    // The device is the source of truth, so a query or a sync still runs while offline instead of
-    // being paused by React Query.
+    // Try the request even when expo-network says offline: its reading can lag reality, and the
+    // persisted cache answers most reads anyway. The cost is that a failed fetch pauses its
+    // retries instead of erroring, so offline shows up as `fetchStatus: 'paused'`, not `error`.
     queries: { networkMode: 'offlineFirst', gcTime: ONE_DAY_MS },
     mutations: { networkMode: 'offlineFirst' },
   },

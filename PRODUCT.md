@@ -68,7 +68,7 @@ Two mechanisms a neighbouring app could not truthfully claim without doing the s
 - The Anthropic key never ships in the app. Identity is a hash of the user's Hevy key, rate limited
   per identity.
 - Excluded on purpose: chat UI, pricing, daily notifications.
-- TypeScript strict, zero `any`. Tests cover logic (progression, e1RM, sync merge), not UI.
+- TypeScript strict, zero `any`. Tests cover logic (progression, e1RM), not UI.
 
 Explicitly undecided, and not to be invented:
 

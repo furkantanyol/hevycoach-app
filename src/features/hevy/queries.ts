@@ -3,23 +3,29 @@ import { useQuery } from '@tanstack/react-query';
 
 import { hevyClient } from './client';
 
+import { queryClient } from '@/lib/query-client';
+
 const MILLISECONDS_PER_MINUTE = 60 * 1000;
 const MILLISECONDS_PER_DAY = 24 * 60 * MILLISECONDS_PER_MINUTE;
 
 /** History only moves when the user finishes a session, so minutes are fresh enough. */
 const WORKOUTS_STALE_TIME_MS = 5 * MILLISECONDS_PER_MINUTE;
-/** Routines change when this app or the user rewrites one — rare, but not never. */
-const ROUTINES_STALE_TIME_MS = 15 * MILLISECONDS_PER_MINUTE;
-/** Hevy's exercise library plus the user's own customs. It effectively does not change. */
-const TEMPLATES_STALE_TIME_MS = MILLISECONDS_PER_DAY;
+
+/** Every Hevy query hangs off this prefix, so one call can drop the whole account's cache. */
+const HEVY_SCOPE = ['hevy'] as const;
 
 export const hevyQueryKeys = {
-  recentWorkouts: (days: number) => ['hevy', 'workouts', 'recent', days] as const,
-  exerciseHistory: (exerciseTemplateId: string) =>
-    ['hevy', 'exercise-history', exerciseTemplateId] as const,
-  routines: ['hevy', 'routines'] as const,
-  exerciseTemplates: ['hevy', 'exercise-templates'] as const,
+  recentWorkouts: (days: number) => [...HEVY_SCOPE, 'workouts', 'recent', days] as const,
 };
+
+/**
+ * A new API key may be a different Hevy account, and the query cache is not keyed by account — it
+ * is also persisted, so without this a restart would serve the previous key's history. Resetting
+ * rather than removing clears mounted observers too, and refetches the ones still on screen.
+ */
+export function resetHevyQueries(): void {
+  void queryClient.resetQueries({ queryKey: HEVY_SCOPE });
+}
 
 type QueryOptions = { readonly enabled?: boolean };
 
@@ -50,34 +56,6 @@ export function useRecentWorkouts(days: number, { enabled = true }: QueryOptions
     queryKey: hevyQueryKeys.recentWorkouts(days),
     queryFn: async () => fetchRecentWorkouts(await hevyClient(), days),
     staleTime: WORKOUTS_STALE_TIME_MS,
-    enabled,
-  });
-}
-
-/** `GET /exercise_history/{id}` is unpaginated: one request is the lift's entire history. */
-export function useExerciseHistory(exerciseTemplateId: string, { enabled = true }: QueryOptions = {}) {
-  return useQuery({
-    queryKey: hevyQueryKeys.exerciseHistory(exerciseTemplateId),
-    queryFn: async () => (await hevyClient()).exerciseHistory.get(exerciseTemplateId),
-    staleTime: WORKOUTS_STALE_TIME_MS,
-    enabled,
-  });
-}
-
-export function useRoutines({ enabled = true }: QueryOptions = {}) {
-  return useQuery({
-    queryKey: hevyQueryKeys.routines,
-    queryFn: async () => (await hevyClient()).routines.listAll(),
-    staleTime: ROUTINES_STALE_TIME_MS,
-    enabled,
-  });
-}
-
-export function useExerciseTemplates({ enabled = true }: QueryOptions = {}) {
-  return useQuery({
-    queryKey: hevyQueryKeys.exerciseTemplates,
-    queryFn: async () => (await hevyClient()).exerciseTemplates.listAll(),
-    staleTime: TEMPLATES_STALE_TIME_MS,
     enabled,
   });
 }

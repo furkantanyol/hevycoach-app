@@ -1,10 +1,10 @@
-import { createHevyClient, type HevyClient } from '@furkantanyol/hevy-client';
+import { type HevyClient } from '@furkantanyol/hevy-client';
 import { useCallback, useState } from 'react';
 
 import { DEFAULT_BODYWEIGHT_KG } from './estimate-energy';
 import { toHealthWorkout } from './to-health-workout';
 
-import { getApiKey } from '@/features/settings/api-key';
+import { hevyClient } from '@/features/hevy/client';
 import { HealthExport, type ExportResult } from '@/modules/health-export';
 
 /** Hevy caps the workouts page at 10. */
@@ -23,13 +23,9 @@ export function useHealthExport() {
     setError(null);
 
     try {
-      const apiKey = await getApiKey();
-      if (!apiKey) {
-        throw new Error('Save your Hevy API key first.');
-      }
+      const client = await hevyClient();
 
       await HealthExport.requestAuthorization();
-      const client = createHevyClient({ apiKey });
       const bodyweightKg = await latestBodyweightKg(client);
       const { workouts } = await client.workouts.list({ pageSize: EXPORT_PAGE_SIZE });
 

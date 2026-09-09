@@ -221,11 +221,11 @@ worth making before a single screen exists that writes offline.
 
 ### What replaced it
 
-- `src/features/hevy/client.ts` — one `@furkantanyol/hevy-client` per API key,
-  memoized so every hook shares its in-memory GET cache.
+- `src/features/hevy/client.ts` — a `@furkantanyol/hevy-client` built from the
+  stored API key. It caches nothing itself; React Query is the only cache.
 - `src/features/hevy/queries.ts` — TanStack Query hooks with a `staleTime` per
   resource. React Query's persister is the offline cache; nothing caches on top
-  of it.
+  of it. That cache is not keyed by account, so saving a new API key resets it.
 - `src/features/coach/weekly-context.ts` — the weekly summary, now a pure
   function over an array of workouts, fed by `useRecentWorkouts`.
 

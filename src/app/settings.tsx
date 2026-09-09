@@ -8,7 +8,7 @@ import { Spacing } from '@/constants/theme';
 import { useAskCoach } from '@/features/coach/use-ask-coach';
 import { buildWeeklyContext, CONTEXT_WINDOW_DAYS } from '@/features/coach/weekly-context';
 import { useHealthExport, type ExportStatus } from '@/features/health/use-health-export';
-import { useRecentWorkouts } from '@/features/hevy/queries';
+import { resetHevyQueries, useRecentWorkouts } from '@/features/hevy/queries';
 import { getApiKey, setApiKey } from '@/features/settings/api-key';
 import { useSettingsStore } from '@/features/settings/settings-store';
 import { useTheme } from '@/hooks/use-theme';
@@ -40,6 +40,7 @@ export default function SettingsScreen() {
   const saveKey = async () => {
     initialReadCancelled.current = true;
     await setApiKey(draftKey.trim());
+    resetHevyQueries();
     setDraftKey('');
     setKeySaved(Boolean(await getApiKey()));
   };
