@@ -18,7 +18,8 @@
       "entitlements": {
         "com.apple.developer.healthkit": true,
         "com.apple.developer.healthkit.access": []
-      }
+      },
+      "appleTeamId": "KP36CSK6Y6"
     },
     "android": {
       "adaptiveIcon": {
