@@ -4,6 +4,7 @@ import { addNetworkStateListener, getNetworkStateAsync } from 'expo-network';
 
 import Storage from '@/features/settings/storage';
 
+/** Must be at least the persister's own maxAge, or a restored query is collected on hydration. */
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
 export const queryClient = new QueryClient({
@@ -24,7 +25,10 @@ export const persister = createAsyncStoragePersister({ storage: Storage });
  */
 export function startOnlineWatch(): void {
   onlineManager.setEventListener((setOnline) => {
-    getNetworkStateAsync().then((state) => setOnline(state.isConnected ?? false));
+    // Seed from the current state; the listener only fires on a change.
+    getNetworkStateAsync()
+      .then((state) => setOnline(state.isConnected ?? false))
+      .catch(() => setOnline(true));
     const subscription = addNetworkStateListener((state) => setOnline(state.isConnected ?? false));
 
     return () => subscription.remove();
