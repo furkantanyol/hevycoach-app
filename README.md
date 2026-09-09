@@ -58,5 +58,13 @@ itself available but saves will fail.
 
 ### Building for a physical iPhone
 
-- Local (preferred): `pnpm ios:device` compiles with the installed Xcode and installs on the connected phone. It needs an Xcode that supports the phone's iOS version; if `xcrun devicectl device info details` reports `ddiServicesAvailable: false`, Xcode cannot install and you must use the cloud build below.
-- Cloud: `eas build --profile development --platform ios`, then install from the link EAS prints. Source-map upload to Sentry is disabled in every profile until `organization`, `project` and a `SENTRY_AUTH_TOKEN` secret are set.
+Fully local, about five minutes, no Xcode-to-device deploy needed:
+
+```bash
+pnpm ios:build                         # eas build --local, development profile, writes build/hevycoach-dev.ipa
+DEVICE_ID=$(xcrun xctrace list devices | grep -oE '\(0000[0-9A-F-]+\)' | tr -d '()' | head -1)
+DEVICE_ID=$DEVICE_ID pnpm ios:install  # xcrun devicectl installs the ad-hoc .ipa
+npx expo start --dev-client            # the dev client connects to Metro over Wi-Fi
+```
+
+`devicectl device install` works even when Xcode has no developer disk image for the phone's iOS version (which is what breaks `expo run:ios --device`). Cloud alternative: `eas build --profile development --platform ios`, then install from the link EAS prints. Source-map upload to Sentry is disabled in every profile until `organization`, `project` and a `SENTRY_AUTH_TOKEN` secret are set.

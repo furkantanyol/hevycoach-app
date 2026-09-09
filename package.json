@@ -53,7 +53,9 @@
     "typecheck": "tsc --noEmit",
     "test": "jest",
     "validate": "pnpm lint && pnpm typecheck && pnpm test",
-    "ios:device": "SENTRY_DISABLE_AUTO_UPLOAD=true expo run:ios --device"
+    "ios:device": "SENTRY_DISABLE_AUTO_UPLOAD=true expo run:ios --device",
+    "ios:build": "SENTRY_DISABLE_AUTO_UPLOAD=true eas build --profile development --platform ios --local --non-interactive --output ./build/hevycoach-dev.ipa",
+    "ios:install": "xcrun devicectl device install app --device \"$DEVICE_ID\" build/hevycoach-dev.ipa"
   },
   "private": true,
   "jest": {
