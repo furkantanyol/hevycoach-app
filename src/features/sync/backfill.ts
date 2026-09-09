@@ -30,6 +30,7 @@ export async function runBackfill(
 ): Promise<BackfillSummary> {
   const state = readSyncState(db);
 
+  // The last page read is left in `backfillPage`, and by then it was also the page count.
   if (state.backfillDone) {
     return { page: state.backfillPage, pageCount: state.backfillPage, workouts: 0, done: true };
   }
@@ -42,22 +43,20 @@ export async function runBackfill(
 
   let page = state.backfillPage;
   let workouts = 0;
-  let pageCount = page;
 
   for (;;) {
     const result = await client.workouts.list({ page, pageSize: MAX_PAGE_SIZE });
 
     applyWorkouts(db, result.workouts);
     workouts += result.workouts.length;
-    pageCount = result.page_count;
 
     const done = page >= result.page_count;
 
     writeSyncState(db, { backfillPage: done ? page : page + 1, backfillDone: done });
-    onProgress?.({ page, pageCount });
+    onProgress?.({ page, pageCount: result.page_count });
 
     if (done) {
-      return { page, pageCount, workouts, done };
+      return { page, pageCount: result.page_count, workouts, done };
     }
 
     page += 1;
