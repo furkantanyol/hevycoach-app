@@ -18,6 +18,9 @@ const MILLISECONDS_PER_DAY = 24 * 60 * MILLISECONDS_PER_MINUTE;
 /** History only moves when the user finishes a session, so minutes are fresh enough. */
 const WORKOUTS_STALE_TIME_MS = 5 * MILLISECONDS_PER_MINUTE;
 
+/** The exercise library only moves when the user writes a custom exercise. */
+const TEMPLATES_STALE_TIME_MS = MILLISECONDS_PER_DAY;
+
 /** Every Hevy query hangs off this prefix, so one call can drop the whole account's cache. */
 const HEVY_SCOPE = ['hevy'] as const;
 
@@ -26,6 +29,7 @@ export const hevyQueryKeys = {
   routines: () => [...HEVY_SCOPE, 'routines'] as const,
   exerciseHistory: (exerciseTemplateId: string) =>
     [...HEVY_SCOPE, 'exercise-history', exerciseTemplateId] as const,
+  exerciseTemplates: () => [...HEVY_SCOPE, 'exercise-templates'] as const,
 };
 
 /**
@@ -83,6 +87,19 @@ export function useRoutines({ enabled = true }: QueryOptions = {}) {
     queryKey: hevyQueryKeys.routines(),
     queryFn: async () => fetchRoutines(await hevyClient()),
     staleTime: WORKOUTS_STALE_TIME_MS,
+    enabled,
+  });
+}
+
+/**
+ * The whole exercise library, which is what maps a logged exercise to its muscle group. It is one
+ * hundred templates a page, so `listAll` is a handful of requests and then a day of cache.
+ */
+export function useExerciseTemplates({ enabled = true }: QueryOptions = {}) {
+  return useQuery({
+    queryKey: hevyQueryKeys.exerciseTemplates(),
+    queryFn: async () => (await hevyClient()).exerciseTemplates.listAll(),
+    staleTime: TEMPLATES_STALE_TIME_MS,
     enabled,
   });
 }
