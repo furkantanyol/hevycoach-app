@@ -24,8 +24,10 @@ export type DrainSummary = {
 };
 
 /**
- * Queues a routine update. Any pending update for the same routine is dropped first, so the last
+ * Queues a routine update. Any queued update for the same routine is dropped first, so the last
  * edit wins and the row moves to the tail — which keeps the queue FIFO across different routines.
+ * That also un-kills a routine whose row had run out of attempts: the new row starts from zero,
+ * which is the only way back for one.
  */
 export function enqueueRoutineUpdate(db: SyncDatabase, routine: RoutineRow): void {
   const now = new Date();
@@ -60,8 +62,8 @@ export function saveRoutineTitle(db: SyncDatabase, routine: RoutineRow, title: s
 
 /**
  * Sends queued writes oldest first, one at a time. Anything that stops the head of the queue stops
- * the whole queue — a failure, or a row still serving its backoff — because a later write must
- * never overtake an earlier one.
+ * the whole queue — a failure, or a row still serving its backoff — because a write must never
+ * overtake an earlier write this app still intends to send.
  */
 export async function drainOutbox(db: SyncDatabase, client: OutboxClient): Promise<DrainSummary> {
   // Dead rows are stepped over rather than blocking: they will never be sent, so waiting on one

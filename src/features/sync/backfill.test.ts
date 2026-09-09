@@ -1,6 +1,6 @@
 import type { Workout } from '@furkantanyol/hevy-client';
 
-import { runBackfill, type BackfillClient } from './backfill';
+import { CLOCK_SKEW_MARGIN_MS, runBackfill, type BackfillClient } from './backfill';
 import { readSyncState } from './sync-state';
 import { buildWorkout, createTestDatabase } from './test-support';
 
@@ -69,7 +69,9 @@ describe('runBackfill', () => {
     const { workoutsCursor } = readSyncState(db);
 
     expect(workoutsCursor).not.toBeNull();
-    expect(Date.parse(workoutsCursor ?? '')).toBeLessThan(Date.now());
+    expect(Date.now() - Date.parse(workoutsCursor ?? '')).toBeGreaterThanOrEqual(
+      CLOCK_SKEW_MARGIN_MS
+    );
   });
 
   it('should walk every page and mark itself done', async () => {

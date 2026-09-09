@@ -137,6 +137,20 @@ describe('drainOutbox', () => {
     expect(summary).toEqual({ status: 'drained', sent: 1, failed: 0, pending: 0, dead: 1 });
   });
 
+  it('should give a re-edited routine a fresh attempt budget, which is the way back from dead', async () => {
+    const db = createTestDatabase();
+    const client = acceptingClient();
+
+    enqueueRoutineUpdate(db, toRoutineRow(buildRoutine({ id: 'a' })));
+    db.update(outbox).set({ attempts: MAX_ATTEMPTS }).where(eq(outbox.entityId, 'a')).run();
+    enqueueRoutineUpdate(db, toRoutineRow(buildRoutine({ id: 'a', title: 'Edited again' })));
+
+    const summary = await drainOutbox(db, client);
+
+    expect(client.updated).toEqual(['a']);
+    expect(summary.dead).toBe(0);
+  });
+
   it('should hold the whole queue behind a row that is still serving its backoff', async () => {
     const db = createTestDatabase();
     const client = acceptingClient();

@@ -57,7 +57,7 @@ export default function SyncScreen() {
 
         <View style={styles.section}>
           <ThemedText type="subtitle">Outbox</ThemedText>
-          <Row label="Pending" value={String(counts.pendingWrites)} />
+          <Row label="Queued" value={String(counts.pendingWrites)} />
           <Row label="Retrying" value={String(counts.retryingWrites)} />
           <Row label="Given up" value={String(counts.deadWrites)} />
           {counts.lastWriteError ? (

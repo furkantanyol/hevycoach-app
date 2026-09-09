@@ -30,6 +30,9 @@ function readTotals(db: SyncDatabase): Totals {
  * counting off `workouts` and `sets` directly would re-run three queries a few hundred times per
  * backfill page. `sync_state` moves once per page and once per sync, which is the pace a human
  * reads at, so the totals are recounted from that.
+ *
+ * This is only correct because every writer commits its rows before it touches `sync_state`, so
+ * the counts a recount reads are never behind the state that triggered it.
  */
 function useSyncCounts() {
   const db = useDatabase();
@@ -37,6 +40,9 @@ function useSyncCounts() {
   const queue = useLiveQuery(db.select().from(outbox));
 
   const stateUpdatedAt = state.updatedAt?.getTime();
+  // `stateUpdatedAt` is a cache key rather than an input: sync_state moving is the signal to
+  // recount, and the counts themselves come from tables the memo does not close over.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const totals = useMemo(() => readTotals(db), [db, stateUpdatedAt]);
 
   return {

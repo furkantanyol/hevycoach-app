@@ -20,7 +20,7 @@ export type BackfillSummary = {
  * inside that gap would sort before the cursor and never be delivered, so the cursor is backdated.
  * Re-delivery is idempotent, so the margin costs nothing but a few repeated upserts.
  */
-const CLOCK_SKEW_MARGIN_MS = 5 * 60 * 1_000;
+export const CLOCK_SKEW_MARGIN_MS = 5 * 60 * 1_000;
 
 /**
  * Walks the whole workout history one page at a time, resuming from wherever the last run stopped.
