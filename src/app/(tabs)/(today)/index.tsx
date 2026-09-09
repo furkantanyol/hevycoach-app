@@ -1,142 +1,189 @@
-import type { RoutineExercise } from '@furkantanyol/hevy-client';
-import { FlashList } from '@shopify/flash-list';
-import { StyleSheet, View } from 'react-native';
+import type { RoutineExercise, WorkoutExercise } from '@furkantanyol/hevy-client';
+import { useState } from 'react';
+import { ScrollView, StyleSheet, View } from 'react-native';
 
 import { Settle } from '@/components/motion';
+import { RuledHeader, RuledRow } from '@/components/ruled-row';
+import { Stamp, StampedField, StampedHead } from '@/components/stamp';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { WeekStrip } from '@/components/week-strip';
 import { Screen, Spacing } from '@/constants/theme';
 import { CONTEXT_WINDOW_DAYS } from '@/features/coach/weekly-context';
 import { useExerciseHistory, useRecentWorkouts, useRoutines } from '@/features/hevy/queries';
 import { describeQueryState, queryState } from '@/features/hevy/query-state';
-import { QueryStatus, StatusLine } from '@/features/hevy/query-status';
-import { describeLoggedSet, describeTargetSets, formatDate } from '@/features/lifts/format';
+import { StatusLine } from '@/features/hevy/query-status';
+import { loadFigure, repsFigure, targetRepsFigure } from '@/features/lifts/figures';
+import { formatDate, joinNote } from '@/features/lifts/format';
 import { toSessions } from '@/features/lifts/history';
-import { pickNextRoutine, type NextSession } from '@/features/today/next-routine';
+import { isWorkingEntry, isWorkingSet } from '@/features/lifts/sets';
+import { daySession, type DaySession } from '@/features/today/day-session';
+import { pickNextRoutine } from '@/features/today/next-routine';
+import { buildWeek, describeWeek } from '@/features/today/week';
 
 const NO_ROUTINES = 'No routines saved in Hevy yet. Build one in Hevy and it shows up here.';
+const NEVER_LOGGED = 'never logged in Hevy';
+const PLANNED_COLUMNS = ['Target kg', 'Last kg'];
+const LOGGED_COLUMNS = ['Load kg', 'Reps'];
 
 /**
- * The session to do now, read one-handed between sets. Every number on it is Hevy's own — the
- * routine's targets, and the sets the user logged last time — because the rules engine that will
- * own a computed target does not exist yet, and a made-up one would be worse than none.
+ * The sheet, read one-handed between sets: the week as a chart with today under the marker, and
+ * the session that column stands for as a ruled table below it. Dragging the marker along the
+ * chart re-rules the table to that day, which is the only navigation this screen has.
+ *
+ * Every figure on it is Hevy's own — a routine's stored target, or a set the lifter logged. The
+ * rules engine that will compute a target does not exist yet, and a made-up one would be worse
+ * than none.
  */
 export default function TodayScreen() {
   const routines = useRoutines();
   const workouts = useRecentWorkouts(CONTEXT_WINDOW_DAYS);
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
 
   const next = pickNextRoutine(routines.data ?? [], workouts.data ?? []);
-  const exercises = next?.routine.exercises ?? [];
+  const plannedSets = (next?.routine.exercises ?? []).reduce(
+    (total, exercise) => total + exercise.sets.length,
+    0
+  );
+  const week = buildWeek(workouts.data ?? [], plannedSets);
+  const selected = week.find((day) => day.key === selectedKey) ?? week[week.length - 1];
+  const session = daySession(selected, next);
 
   // Routines decide what is on screen, so they speak first; the workouts read only speaks when it
   // has something the routines read does not, because a failed one picks the wrong session
   // silently. Its own emptiness says nothing: a new user has no history, and that is not news.
   const status =
-    describeQueryState(
-      queryState(routines, exercises.length > 0),
-      next === null ? NO_ROUTINES : `${next.routine.title} has no exercises in Hevy yet.`
-    ) ?? describeQueryState(queryState(workouts, (workouts.data?.length ?? 0) > 0), null);
+    describeQueryState(queryState(routines, next !== null), NO_ROUTINES) ??
+    describeQueryState(queryState(workouts, (workouts.data?.length ?? 0) > 0), null);
 
   return (
     <ThemedView style={Screen.container}>
-      <FlashList
-        contentInsetAdjustmentBehavior="automatic"
-        contentContainerStyle={Screen.listContent}
-        data={exercises}
-        keyExtractor={(exercise) => `${exercise.index}-${exercise.exercise_template_id}`}
-        ListHeaderComponent={<SessionHeader next={next} status={status} />}
-        renderItem={({ item }) => <ExerciseRow exercise={item} />}
-      />
+      <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.sheet}>
+        <StampedHead>
+          <StampedField stamp="Block" value={describeBlock(routines.data?.length ?? 0)} />
+          <StampedField stamp="Week" value={describeWeek(week)} trailing />
+        </StampedHead>
+        <Stamp style={styles.legend}>Sets per day</Stamp>
+
+        <WeekStrip days={week} selectedKey={selected.key} onSelect={setSelectedKey} />
+
+        <Settle visible={!routines.isPending} style={styles.session}>
+          <ThemedText type="subtitle" style={styles.sessionTitle}>
+            {session.title}
+          </ThemedText>
+          <ThemedText type="small" themeColor="inkSecondary">
+            {session.note}
+          </ThemedText>
+        </Settle>
+        <StatusLine>{status}</StatusLine>
+
+        <SessionTable session={session} lead={selected.isToday} />
+      </ScrollView>
     </ThemedView>
   );
 }
 
-/** The header renders whether or not there are rows, so what it says is never hidden by them. */
-function SessionHeader({ next, status }: { next: NextSession | null; status: string | null }) {
-  return (
-    <>
-      <StatusLine>{status}</StatusLine>
-      <Settle visible={next !== null} style={styles.header}>
-        <ThemedText type="subtitle">{next?.routine.title}</ThemedText>
-        <ThemedText type="small" themeColor="inkSecondary">
-          {next ? describeOrigin(next) : null}
-        </ThemedText>
-      </Settle>
-    </>
-  );
-}
-
-/** Where this session came from, so the user is never shown a choice without its reason. */
-function describeOrigin(next: NextSession): string {
-  if (next.after === null) {
-    return 'First in your Hevy routines.';
+function describeBlock(sessions: number): string {
+  if (sessions === 0) {
+    return '—';
   }
-  return `Next in your Hevy routines after ${next.after.title} on ${formatDate(next.after.start_time)}.`;
+  return sessions === 1 ? '1 session' : `${sessions} sessions`;
 }
 
-/**
- * One exercise: the routine's own target, and what the user last actually logged against it. The
- * two are never reconciled into a third number here.
- */
-function ExerciseRow({ exercise }: { exercise: RoutineExercise }) {
-  const history = useExerciseHistory(exercise.exercise_template_id);
-  const previous = toSessions(history.data ?? []).at(0);
+/** The table under the chart. Its columns change with the day, and its stamps say so. */
+function SessionTable({ session, lead }: { session: DaySession; lead: boolean }) {
+  if (session.kind === 'empty') {
+    return null;
+  }
+
+  const columns = session.kind === 'planned' ? PLANNED_COLUMNS : LOGGED_COLUMNS;
 
   return (
-    <View style={styles.row}>
-      <ThemedText>{exercise.title}</ThemedText>
-      <View style={styles.line}>
-        <ThemedText type="small" themeColor="inkSecondary" style={styles.label}>
-          Target
-        </ThemedText>
-        <ThemedText style={styles.valueText}>{describeTargetSets(exercise.sets)}</ThemedText>
-      </View>
-      <View style={styles.line}>
-        <ThemedText type="small" themeColor="inkSecondary" style={styles.label}>
-          Last
-        </ThemedText>
-        <View style={styles.value}>
-          {previous ? (
-            <>
-              <ThemedText>{previous.sets.map(describeLoggedSet).join('   ')}</ThemedText>
-              <ThemedText type="small" themeColor="inkSecondary">
-                {formatDate(previous.startTime)}
-              </ThemedText>
-            </>
-          ) : (
-            <QueryStatus query={history} hasRows={false} whenEmpty="Never logged in Hevy." />
-          )}
-        </View>
-      </View>
+    <View>
+      <RuledHeader label="Exercise" columns={columns} />
+      {session.kind === 'planned'
+        ? session.exercises.map((exercise, index) => (
+            <PlannedRow
+              key={`${exercise.index}-${exercise.exercise_template_id}`}
+              exercise={exercise}
+              lead={lead && index === 0}
+            />
+          ))
+        : session.exercises.map((exercise, index) => (
+            <LoggedRow
+              key={`${exercise.index}-${exercise.exercise_template_id}`}
+              exercise={exercise}
+              lead={lead && index === 0}
+            />
+          ))}
     </View>
   );
 }
 
-const LABEL_WIDTH = 56;
-const MIN_ROW_HEIGHT = 44;
+/**
+ * One exercise of the session to come: the routine's own target, and the load the lifter last put
+ * on the bar for it. The two are never reconciled into a third number.
+ */
+function PlannedRow({ exercise, lead }: { exercise: RoutineExercise; lead: boolean }) {
+  const history = useExerciseHistory(exercise.exercise_template_id);
+  const previous = toSessions(history.data ?? []).at(0);
+  const working = previous?.sets.filter(isWorkingEntry) ?? [];
+  const reps = targetRepsFigure(exercise.sets);
+
+  return (
+    <RuledRow
+      lead={lead}
+      label={exercise.title}
+      note={joinNote([
+        reps === null ? null : `${reps} reps`,
+        previous
+          ? `last ${formatDate(previous.startTime)}`
+          : describeQueryState(queryState(history, false), NEVER_LOGGED),
+      ])}
+      figures={[
+        loadFigure(exercise.sets.map((set) => set.weight_kg)),
+        loadFigure(working.map((set) => set.weight_kg)),
+      ]}
+    />
+  );
+}
+
+/** One exercise of a session already logged, exactly as the lifter logged it. */
+function LoggedRow({ exercise, lead }: { exercise: WorkoutExercise; lead: boolean }) {
+  const working = exercise.sets.filter(isWorkingSet);
+
+  return (
+    <RuledRow
+      lead={lead}
+      label={exercise.title}
+      note={exercise.notes.trim().length > 0 ? exercise.notes.trim() : null}
+      figures={[
+        loadFigure(working.map((set) => set.weight_kg)),
+        repsFigure(
+          working.length,
+          working.map((set) => set.reps)
+        ),
+      ]}
+    />
+  );
+}
 
 const styles = StyleSheet.create({
-  header: {
-    gap: Spacing.two,
-    paddingBottom: Spacing.four,
+  sheet: {
+    paddingHorizontal: Spacing.four,
+    paddingBottom: Spacing.six,
   },
-  row: {
-    minHeight: MIN_ROW_HEIGHT,
-    gap: Spacing.one,
-    paddingBottom: Spacing.four,
+  legend: {
+    textAlign: 'right',
+    paddingBottom: Spacing.one,
   },
-  line: {
-    flexDirection: 'row',
-    gap: Spacing.two,
-  },
-  label: {
-    width: LABEL_WIDTH,
-  },
-  value: {
-    flex: 1,
+  session: {
     gap: Spacing.half,
+    paddingTop: Spacing.four,
+    paddingBottom: Spacing.three,
   },
-  valueText: {
-    flex: 1,
+  sessionTitle: {
+    fontSize: 22,
+    lineHeight: 28,
   },
 });

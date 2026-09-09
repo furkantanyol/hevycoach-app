@@ -16,6 +16,8 @@ import { Figures, LOAD_STEPS, Spacing, loadColor } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
 const STRIP_HEIGHT = 88;
+/** How far sideways the finger commits before the marker, rather than the sheet, takes the drag. */
+const ACTIVATION_SLOP = 10;
 const BAND_MAX_HEIGHT = 52;
 const TRAVEL_MS = 180;
 const INSTANT_MS = 0;
@@ -60,6 +62,7 @@ export function WeekStrip({ days, selectedKey, onSelect }: WeekStripProps) {
   /** Where the finger has dragged the marker to; null whenever it is resting on a column. */
   const dragged = useSharedValue<number | null>(null);
 
+  /** Called from the gesture: it is deliberately cheap and idempotent, see `travel` below. */
   const selectAt = (x: number) => {
     const index = Math.min(days.length - 1, Math.max(0, Math.floor(x / columnWidth)));
     const day = days[index];
@@ -71,15 +74,22 @@ export function WeekStrip({ days, selectedKey, onSelect }: WeekStripProps) {
   // The marker follows the finger frame by frame on the UI thread, then settles on the column it
   // was released over; the selection it reports back is what re-rules the table below.
   const travel = Gesture.Pan()
+    // The strip lives inside a scrolling sheet, so the marker only takes the gesture once the
+    // finger has committed sideways; anything vertical stays with the scroll.
+    .activeOffsetX([-ACTIVATION_SLOP, ACTIVATION_SLOP])
+    .failOffsetY([-ACTIVATION_SLOP, ACTIVATION_SLOP])
     .onUpdate((event) => {
       const highest = (days.length - 1) * columnWidth;
       const target = event.x - columnWidth / 2;
       dragged.value = Math.min(highest, Math.max(0, target));
-    })
-    .onEnd((event) => {
-      // Released: the marker settles onto whichever column it was over, and the table follows.
-      dragged.value = null;
+      // The table re-rules under the finger rather than on release, which is what ties the chart
+      // to the detail. `selectAt` is a no-op until the marker crosses into the next column, so
+      // this renders once per column crossed and not once per frame.
       runOnJS(selectAt)(event.x);
+    })
+    .onEnd(() => {
+      // Released: the marker settles onto the column the table is already showing.
+      dragged.value = null;
     });
 
   const tap = Gesture.Tap().onEnd((event) => {

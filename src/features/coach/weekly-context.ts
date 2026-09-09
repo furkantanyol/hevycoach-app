@@ -1,16 +1,10 @@
 import type { Workout } from '@furkantanyol/hevy-client';
 
+import { countWorkingSets } from '@/features/lifts/sets';
+
 export const CONTEXT_WINDOW_DAYS = 7;
 
 const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
-const WARMUP = 'warmup';
-
-function countWorkingSets(workout: Workout): number {
-  return workout.exercises.reduce(
-    (total, exercise) => total + exercise.sets.filter((set) => set.type !== WARMUP).length,
-    0
-  );
-}
 
 /** The workouts that fall inside the rolling window, from a list that may reach further back. */
 export function workoutsWithin(
@@ -42,7 +36,7 @@ function newest(workouts: readonly Workout[]): Workout | undefined {
  */
 export function buildWeeklyContext(workouts: readonly Workout[], now: Date = new Date()): string {
   const inWindow = workoutsWithin(workouts, CONTEXT_WINDOW_DAYS, now);
-  const workingSets = inWindow.reduce((total, workout) => total + countWorkingSets(workout), 0);
+  const workingSets = inWindow.reduce((total, workout) => total + countWorkingSets(workout.exercises), 0);
 
   const latest = newest(workouts);
   const latestSummary = latest

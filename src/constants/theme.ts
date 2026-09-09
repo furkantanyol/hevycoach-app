@@ -102,9 +102,10 @@ export const Screen = StyleSheet.create({
   listContent: {
     padding: Spacing.four,
   },
-  /** A scrolled column of sections. */
+  /** A scrolled column of stamped sections, each ruled off from the next. */
   scrollContent: {
-    gap: Spacing.four,
+    gap: Spacing.five,
     padding: Spacing.four,
+    paddingBottom: Spacing.six,
   },
 });

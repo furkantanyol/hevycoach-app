@@ -1,18 +1,22 @@
 import { useState } from 'react';
-import { StyleSheet, View, type LayoutChangeEvent } from 'react-native';
+import { StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';
 
 import type { SessionEstimate } from './e1rm';
-import { formatDate, formatKilograms } from './format';
+import { formatDate } from './format';
 
+import { Stamp } from '@/components/stamp';
 import { ThemedText } from '@/components/themed-text';
-import { Spacing } from '@/constants/theme';
+import { Figures, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
 const CHART_HEIGHT = 120;
+const GUTTER_WIDTH = 48;
 const STROKE = 2;
 const DOT = 6;
 const MIN_POINTS = 2;
 const DEGREES_PER_RADIAN = 180 / Math.PI;
+const VALUE_SIZE = 12;
+const VALUE_DECIMALS = 10;
 
 type Segment = {
   readonly left: number;
@@ -68,13 +72,19 @@ function plot(values: readonly number[], width: number): Plot | null {
   };
 }
 
+function figure(value: number): string {
+  return String(Math.round(value * VALUE_DECIMALS) / VALUE_DECIMALS);
+}
+
 type OneRepMaxChartProps = {
   readonly points: readonly SessionEstimate[];
 };
 
 /**
- * The one chart in the app: estimated 1RM per session, oldest on the left. It is labelled as an
- * estimate everywhere it appears, because that is what Epley gives.
+ * The one chart in the app: estimated 1RM per session, oldest on the left, drawn as a ruled plot —
+ * hairline axes, tabular figures against them, one ink line. It is labelled as an estimate
+ * everywhere it appears, because that is what Epley gives, and it carries no marker: the
+ * highlighter belongs to today alone.
  */
 export function OneRepMaxChart({ points }: OneRepMaxChartProps) {
   const theme = useTheme();
@@ -99,63 +109,83 @@ export function OneRepMaxChart({ points }: OneRepMaxChartProps) {
   const onLayout = (event: LayoutChangeEvent) => setWidth(event.nativeEvent.layout.width);
 
   return (
-    <View style={styles.chart}>
-      <ThemedText type="small" themeColor="inkSecondary">
-        {`High ${formatKilograms(highest)} · Low ${formatKilograms(lowest)}`}
-      </ThemedText>
-
-      <View
-        onLayout={onLayout}
-        style={[styles.canvas, { borderColor: theme.rule }]}
-        accessibilityRole="image"
-        accessibilityLabel={`Estimated one rep max across ${points.length} sessions, from ${formatKilograms(first.estimateKg)} on ${formatDate(first.startTime)} to ${formatKilograms(last.estimateKg)} on ${formatDate(last.startTime)}.`}
-      >
-        {drawn?.segments.map((segment, index) => (
-          <View
-            // Segments are positions in a redrawn line, so their index is their identity.
-            key={index}
-            style={[
-              styles.segment,
-              {
-                backgroundColor: theme.ink,
-                left: segment.left,
-                top: segment.top,
-                width: segment.width,
-                transform: [{ rotate: segment.rotation }],
-              },
-            ]}
-          />
-        ))}
-        {drawn ? (
-          <View
-            style={[
-              styles.dot,
-              { backgroundColor: theme.ink, left: drawn.lastPoint.left, top: drawn.lastPoint.top },
-            ]}
-          />
-        ) : null}
+    <View>
+      <View style={styles.plot}>
+        <View style={styles.gutter}>
+          <Stamp style={styles.gutterStamp}>kg</Stamp>
+          <Text style={[styles.value, Figures.tabular, { color: theme.inkSecondary }]}>
+            {figure(highest)}
+          </Text>
+          <Text style={[styles.value, Figures.tabular, { color: theme.inkSecondary }]}>
+            {figure(lowest)}
+          </Text>
+        </View>
+        <View
+          onLayout={onLayout}
+          style={[styles.canvas, { borderColor: theme.rule }]}
+          accessibilityRole="image"
+          accessibilityLabel={`Estimated one rep max across ${points.length} sessions, from ${figure(first.estimateKg)} kilograms on ${formatDate(first.startTime)} to ${figure(last.estimateKg)} kilograms on ${formatDate(last.startTime)}.`}
+        >
+          {drawn?.segments.map((segment, index) => (
+            <View
+              // Segments are positions in a redrawn line, so their index is their identity.
+              key={index}
+              style={[
+                styles.segment,
+                {
+                  backgroundColor: theme.ink,
+                  left: segment.left,
+                  top: segment.top,
+                  width: segment.width,
+                  transform: [{ rotate: segment.rotation }],
+                },
+              ]}
+            />
+          ))}
+          {drawn ? (
+            <View
+              style={[
+                styles.dot,
+                { backgroundColor: theme.ink, left: drawn.lastPoint.left, top: drawn.lastPoint.top },
+              ]}
+            />
+          ) : null}
+        </View>
       </View>
 
-      <View style={styles.axis}>
-        <ThemedText type="small" themeColor="inkSecondary">
+      <View style={styles.dates}>
+        <Text style={[styles.value, Figures.tabular, { color: theme.inkSecondary }]}>
           {formatDate(first.startTime)}
-        </ThemedText>
-        <ThemedText type="small" themeColor="inkSecondary">
+        </Text>
+        <Text style={[styles.value, Figures.tabular, { color: theme.inkSecondary }]}>
           {formatDate(last.startTime)}
-        </ThemedText>
+        </Text>
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  chart: {
-    gap: Spacing.one,
+  plot: {
+    flexDirection: 'row',
+  },
+  gutter: {
+    width: GUTTER_WIDTH,
+    height: CHART_HEIGHT,
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+    paddingRight: Spacing.two,
+  },
+  gutterStamp: {
+    position: 'absolute',
+    top: -Spacing.three,
+    right: Spacing.two,
   },
   canvas: {
+    flex: 1,
     height: CHART_HEIGHT,
+    borderLeftWidth: StyleSheet.hairlineWidth,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderTopWidth: StyleSheet.hairlineWidth,
   },
   segment: {
     position: 'absolute',
@@ -168,8 +198,13 @@ const styles = StyleSheet.create({
     height: DOT,
     borderRadius: DOT / 2,
   },
-  axis: {
+  dates: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    paddingLeft: GUTTER_WIDTH,
+    paddingTop: Spacing.one,
+  },
+  value: {
+    fontSize: VALUE_SIZE,
   },
 });

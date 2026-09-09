@@ -1,7 +1,10 @@
 import { Link } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { Button, Pressable, ScrollView, StyleSheet, Switch, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Switch, TextInput, View } from 'react-native';
 
+import { Rule } from '@/components/motion';
+import { RuledButton } from '@/components/ruled-button';
+import { Stamp } from '@/components/stamp';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Screen, Spacing } from '@/constants/theme';
@@ -13,6 +16,9 @@ import { useSettingsStore } from '@/features/settings/settings-store';
 import { useTheme } from '@/hooks/use-theme';
 import { HealthExport, type ExportResult } from '@/modules/health-export';
 
+const MIN_TAP_TARGET = 44;
+
+/** Settings on the same sheet as everything else: stamped fields, ruled answers, ink actions. */
 export default function SettingsScreen() {
   const theme = useTheme();
   const exportEnabled = useSettingsStore((state) => state.exportEnabled);
@@ -53,7 +59,8 @@ export default function SettingsScreen() {
     <ThemedView style={Screen.container}>
       <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={Screen.scrollContent}>
         <View style={styles.section}>
-          <ThemedText type="subtitle">Hevy API key</ThemedText>
+          <Stamp>Hevy API key</Stamp>
+          <Rule weight="ink" />
           <TextInput
             value={draftKey}
             onChangeText={setDraftKey}
@@ -64,44 +71,57 @@ export default function SettingsScreen() {
             secureTextEntry
             autoCapitalize="none"
             autoCorrect={false}
-            style={[styles.input, { color: theme.ink, borderColor: theme.rule }]}
+            style={[styles.input, { color: theme.ink }]}
           />
-          <Button title="Save" onPress={saveKey} disabled={draftKey.trim().length === 0} />
+          <Rule />
+          <RuledButton
+            title="Save"
+            onPress={() => void saveKey()}
+            primary
+            disabled={draftKey.trim().length === 0}
+          />
           <ThemedText type="small" themeColor="inkSecondary">
             {describePro({ status: pro.status, checking: pro.checking, keySaved })}
           </ThemedText>
           {pro.status === 'unknown' && keySaved ? (
-            <Button title="Check again" onPress={pro.check} disabled={pro.checking} />
+            <RuledButton title="Check again" onPress={pro.check} disabled={pro.checking} />
           ) : null}
         </View>
 
         <View style={styles.section}>
-          <ThemedText type="subtitle">Training profile</ThemedText>
+          <Stamp>Training profile</Stamp>
+          <Rule weight="ink" />
           <Link href="/onboarding" asChild>
             <Pressable accessibilityRole="button" style={styles.linkRow}>
-              <ThemedText type="linkPrimary">Edit your five answers</ThemedText>
+              <ThemedText>Edit your five answers</ThemedText>
             </Pressable>
           </Link>
+          <Rule />
         </View>
 
-        <View style={styles.row}>
-          <ThemedText>Export to Apple Health</ThemedText>
-          <Switch
-            value={exportEnabled}
-            onValueChange={setExportEnabled}
-            disabled={!healthAvailable}
+        <View style={styles.section}>
+          <Stamp>Apple Health</Stamp>
+          <Rule weight="ink" />
+          <View style={styles.switchRow}>
+            <ThemedText>Export workouts</ThemedText>
+            <Switch
+              value={exportEnabled}
+              onValueChange={setExportEnabled}
+              disabled={!healthAvailable}
+              trackColor={{ true: theme.ink, false: theme.rule }}
+              ios_backgroundColor={theme.rule}
+            />
+          </View>
+          <Rule />
+          <RuledButton
+            title="Export last 10 workouts"
+            onPress={run}
+            disabled={!exportEnabled || !keySaved || !healthAvailable || status === 'running'}
           />
+          <ThemedText type="small" themeColor="inkSecondary">
+            {describeStatus({ healthAvailable, status, result, error })}
+          </ThemedText>
         </View>
-
-        <Button
-          title="Export last 10 workouts"
-          onPress={run}
-          disabled={!exportEnabled || !keySaved || !healthAvailable || status === 'running'}
-        />
-
-        <ThemedText type="small" themeColor="inkSecondary">
-          {describeStatus({ healthAvailable, status, result, error })}
-        </ThemedText>
       </ScrollView>
     </ThemedView>
   );
@@ -152,25 +172,22 @@ function describeStatus({ healthAvailable, status, result, error }: StatusDescri
   return 'Already-exported workouts are skipped unless they changed in Hevy. Energy is an estimate.';
 }
 
-const MIN_TAP_TARGET = 44;
-
 const styles = StyleSheet.create({
   section: {
     gap: Spacing.two,
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
   },
   linkRow: {
     minHeight: MIN_TAP_TARGET,
     justifyContent: 'center',
   },
+  switchRow: {
+    minHeight: MIN_TAP_TARGET,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
   input: {
-    borderWidth: 1,
-    borderRadius: Spacing.two,
-    paddingHorizontal: Spacing.three,
+    minHeight: MIN_TAP_TARGET,
     paddingVertical: Spacing.two,
   },
 });

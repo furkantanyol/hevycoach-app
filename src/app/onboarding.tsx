@@ -1,10 +1,13 @@
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { Button, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
+import { Rule } from '@/components/motion';
+import { RuledButton } from '@/components/ruled-button';
+import { Stamp } from '@/components/stamp';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Screen, Spacing } from '@/constants/theme';
+import { Figures, Screen, Spacing } from '@/constants/theme';
 import {
   DAYS_PER_WEEK_OPTIONS,
   EQUIPMENT_OPTIONS,
@@ -40,13 +43,16 @@ const EQUIPMENT_LABELS: Record<Equipment, string> = {
 
 const MIN_TAP_TARGET = 44;
 const NOTES_MIN_HEIGHT = 88;
+const BOX_SIZE = 16;
 
 /**
- * The five questions, and the coaching note. Nothing here asks what the Hevy history answers —
- * lifts, volume and the frequency actually trained are read, never typed.
+ * The five questions, and the coaching note, printed as a form on the sheet: each field stamped,
+ * ruled, and answered by ticking a box. It is one page rather than a wizard, because five
+ * questions do not need paging and progress dots would be a ceremony the answers do not deserve.
  *
- * The same screen is the first-run flow and the Settings editor. It opens on whatever was saved,
- * so editing never means answering again.
+ * Nothing here asks what the Hevy history answers — lifts, volume and the frequency actually
+ * trained are read, never typed. The same screen is the first-run flow and the Settings editor, so
+ * it opens on whatever was saved and editing never means answering again.
  */
 export default function OnboardingScreen() {
   const saveOnboarding = useSettingsStore((state) => state.saveOnboarding);
@@ -69,8 +75,13 @@ export default function OnboardingScreen() {
 
   return (
     <ThemedView style={Screen.container}>
-      <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={Screen.scrollContent}>
+      <ScrollView
+        contentInsetAdjustmentBehavior="automatic"
+        contentContainerStyle={Screen.scrollContent}
+        keyboardDismissMode="on-drag"
+      >
         <Choice
+          field="Goal"
           question="What are you training for?"
           options={TRAINING_GOALS}
           selected={draft.goal}
@@ -78,6 +89,7 @@ export default function OnboardingScreen() {
           onSelect={(goal) => setDraft({ ...draft, goal })}
         />
         <Choice
+          field="Days per week"
           question="How many days a week can you train?"
           options={DAYS_PER_WEEK_OPTIONS}
           selected={draft.daysPerWeek}
@@ -85,6 +97,7 @@ export default function OnboardingScreen() {
           onSelect={(daysPerWeek) => setDraft({ ...draft, daysPerWeek })}
         />
         <Choice
+          field="Experience"
           question="How long have you been lifting?"
           options={EXPERIENCE_LEVELS}
           selected={draft.experience}
@@ -92,6 +105,7 @@ export default function OnboardingScreen() {
           onSelect={(experience) => setDraft({ ...draft, experience })}
         />
         <Choice
+          field="Equipment"
           question="What equipment do you have?"
           options={EQUIPMENT_OPTIONS}
           selected={draft.equipment}
@@ -100,25 +114,46 @@ export default function OnboardingScreen() {
         />
 
         <FreeText
+          field="Constraints"
           question="Injuries or constraints?"
           value={draft.constraints}
           onChangeText={(constraints) => setDraft({ ...draft, constraints })}
           placeholder="Anything the coach must work around. Optional."
         />
         <FreeText
-          question="Coaching notes"
+          field="Coaching notes"
+          question="Anything else the coach should know?"
           value={draft.coachingNotes}
           onChangeText={(coachingNotes) => setDraft({ ...draft, coachingNotes })}
-          placeholder="Anything else you want the coach to know. Optional."
+          placeholder="Optional."
         />
 
-        <Button title={isEditing ? 'Save' : 'Start'} onPress={save} disabled={answers === null} />
+        <View style={styles.submit}>
+          <RuledButton
+            title={isEditing ? 'Save' : 'Start'}
+            onPress={save}
+            primary
+            disabled={answers === null}
+          />
+        </View>
       </ScrollView>
     </ThemedView>
   );
 }
 
+/** A stamped field name over the question it asks, and the ink rule its answers hang from. */
+function FieldHead({ field, question }: { field: string; question: string }) {
+  return (
+    <View style={styles.head}>
+      <Stamp>{field}</Stamp>
+      <ThemedText>{question}</ThemedText>
+      <Rule weight="ink" />
+    </View>
+  );
+}
+
 type ChoiceProps<Option extends string | number> = {
+  readonly field: string;
   readonly question: string;
   readonly options: readonly Option[];
   readonly selected: Option | null;
@@ -127,50 +162,73 @@ type ChoiceProps<Option extends string | number> = {
 };
 
 function Choice<Option extends string | number>({
+  field,
   question,
   options,
   selected,
   describe,
   onSelect,
 }: ChoiceProps<Option>) {
+  return (
+    <View>
+      <FieldHead field={field} question={question} />
+      {options.map((option) => (
+        <OptionRow
+          key={option}
+          label={describe(option)}
+          selected={option === selected}
+          onPress={() => onSelect(option)}
+        />
+      ))}
+    </View>
+  );
+}
+
+type OptionRowProps = {
+  readonly label: string;
+  readonly selected: boolean;
+  readonly onPress: () => void;
+};
+
+/** One ruled line of the form, answered by filling in its box. */
+function OptionRow({ label, selected, onPress }: OptionRowProps) {
   const theme = useTheme();
 
   return (
-    <View style={styles.section}>
-      <ThemedText>{question}</ThemedText>
-      <View style={styles.options}>
-        {options.map((option) => (
-          <Pressable
-            key={option}
-            accessibilityRole="radio"
-            accessibilityState={{ selected: option === selected }}
-            onPress={() => onSelect(option)}
-            style={[
-              styles.option,
-              option === selected ? { backgroundColor: theme.load1 } : null,
-            ]}
-          >
-            <ThemedText>{describe(option)}</ThemedText>
-          </Pressable>
-        ))}
-      </View>
+    <View>
+      <Pressable
+        accessibilityRole="radio"
+        accessibilityState={{ selected }}
+        onPress={onPress}
+        style={styles.option}
+      >
+        <ThemedText style={Figures.tabular}>{label}</ThemedText>
+        <View
+          style={[
+            styles.box,
+            { borderColor: theme.ink, backgroundColor: selected ? theme.ink : 'transparent' },
+          ]}
+        />
+      </Pressable>
+      <Rule />
     </View>
   );
 }
 
 type FreeTextProps = {
+  readonly field: string;
   readonly question: string;
   readonly value: string;
   readonly placeholder: string;
   readonly onChangeText: (value: string) => void;
 };
 
-function FreeText({ question, value, placeholder, onChangeText }: FreeTextProps) {
+function FreeText({ field, question, value, placeholder, onChangeText }: FreeTextProps) {
   const theme = useTheme();
 
   return (
-    <View style={styles.section}>
-      <ThemedText>{question}</ThemedText>
+    <View>
+      <FieldHead field={field} question={question} />
       <TextInput
         value={value}
         onChangeText={onChangeText}
@@ -178,33 +236,35 @@ function FreeText({ question, value, placeholder, onChangeText }: FreeTextProps)
         placeholderTextColor={theme.inkSecondary}
         maxLength={FREE_TEXT_MAX_LENGTH}
         multiline
-        style={[styles.notes, { color: theme.ink, borderColor: theme.rule }]}
+        style={[styles.notes, { color: theme.ink }]}
       />
+      <Rule />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  section: {
-    gap: Spacing.two,
-  },
-  options: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Spacing.two,
+  head: {
+    gap: Spacing.one,
+    paddingBottom: Spacing.two,
   },
   option: {
     minHeight: MIN_TAP_TARGET,
-    minWidth: MIN_TAP_TARGET,
-    justifyContent: 'center',
+    flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: Spacing.three,
-    borderRadius: Spacing.two,
+    justifyContent: 'space-between',
+    paddingVertical: Spacing.two,
+  },
+  box: {
+    width: BOX_SIZE,
+    height: BOX_SIZE,
+    borderWidth: StyleSheet.hairlineWidth,
   },
   notes: {
     minHeight: NOTES_MIN_HEIGHT,
-    borderWidth: 1,
-    borderRadius: Spacing.two,
-    padding: Spacing.two,
+    paddingVertical: Spacing.two,
+  },
+  submit: {
+    paddingTop: Spacing.two,
   },
 });

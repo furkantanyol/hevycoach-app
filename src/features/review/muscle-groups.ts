@@ -1,6 +1,6 @@
 import type { Workout } from '@furkantanyol/hevy-client';
 
-const WARMUP = 'warmup';
+import { isWorkingSet } from '@/features/lifts/sets';
 
 /** Hevy's own grouping is `primary_muscle_group` on the exercise template; nothing is derived here. */
 type TemplateMuscleGroup = {
@@ -33,10 +33,6 @@ export function formatMuscleGroup(muscleGroup: string): string {
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
-function countWorkingSets(sets: readonly { readonly type: string }[]): number {
-  return sets.filter((set) => set.type !== WARMUP).length;
-}
-
 /**
  * Working sets per muscle group over the workouts handed in, and the exercises that produced them.
  *
@@ -52,7 +48,7 @@ export function workingSetsByMuscleGroup(
 
   for (const workout of workouts) {
     for (const exercise of workout.exercises) {
-      const workingSets = countWorkingSets(exercise.sets);
+      const workingSets = exercise.sets.filter(isWorkingSet).length;
       if (workingSets === 0) {
         continue;
       }

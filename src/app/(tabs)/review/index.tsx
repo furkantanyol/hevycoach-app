@@ -3,6 +3,8 @@ import { FlashList } from '@shopify/flash-list';
 import { StyleSheet, View } from 'react-native';
 
 import { Settle } from '@/components/motion';
+import { RuledHeader, RuledRow } from '@/components/ruled-row';
+import { Stamp, StampedField, StampedHead } from '@/components/stamp';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Screen, Spacing } from '@/constants/theme';
@@ -10,8 +12,10 @@ import { CoachSection } from '@/features/coach/coach-section';
 import { CONTEXT_WINDOW_DAYS, workoutsWithin } from '@/features/coach/weekly-context';
 import { useExerciseTemplates, useRecentWorkouts } from '@/features/hevy/queries';
 import { QueryStatus } from '@/features/hevy/query-status';
-import { describeLoggedSet, formatDate } from '@/features/lifts/format';
+import { countFigure, loadFigure, repsFigure } from '@/features/lifts/figures';
+import { formatDate } from '@/features/lifts/format';
 import { LiftLink } from '@/features/lifts/lift-link';
+import { isWorkingSet } from '@/features/lifts/sets';
 import {
   formatMuscleGroup,
   workingSetsByMuscleGroup,
@@ -20,6 +24,8 @@ import {
 
 const LIFT_DETAIL_PATHNAME = '/review/lift/[templateId]' as const;
 const NOTHING_LOGGED = `Nothing logged in Hevy in the last ${CONTEXT_WINDOW_DAYS} days.`;
+const VOLUME_COLUMNS = ['Sets'];
+const SESSION_COLUMNS = ['Load kg', 'Reps'];
 
 /**
  * A quiet week should read as a quiet week rather than as an empty history, so when the window is
@@ -33,17 +39,21 @@ function describeQuietWeek(workouts: readonly Workout[]): string {
   return `${NOTHING_LOGGED} Your last session was ${latest.title} on ${formatDate(latest.start_time)}.`;
 }
 
+type ExerciseRow = {
+  readonly kind: 'exercise';
+  readonly key: string;
+  readonly templateId: string;
+  readonly title: string;
+  readonly figures: readonly (string | null)[];
+  /** Sits under the muscle group that counted it, rather than standing on its own. */
+  readonly sub: boolean;
+};
+
 type Row =
-  | { readonly kind: 'heading'; readonly key: string; readonly text: string }
+  | { readonly kind: 'volume-head'; readonly key: string }
   | { readonly kind: 'group'; readonly key: string; readonly group: MuscleGroupSetCount }
-  | { readonly kind: 'session'; readonly key: string; readonly workout: Workout }
-  | {
-      readonly kind: 'exercise';
-      readonly key: string;
-      readonly templateId: string;
-      readonly title: string;
-      readonly detail: string;
-    };
+  | { readonly kind: 'session-head'; readonly key: string; readonly workout: Workout }
+  | ExerciseRow;
 
 function toRows(sessions: readonly Workout[], groups: readonly MuscleGroupSetCount[]): Row[] {
   const latest = sessions.at(0);
@@ -52,33 +62,43 @@ function toRows(sessions: readonly Workout[], groups: readonly MuscleGroupSetCou
   }
 
   return [
-    { kind: 'heading' as const, key: 'heading-volume', text: 'Working sets by muscle group' },
+    { kind: 'volume-head' as const, key: 'head-volume' },
     ...groups.flatMap<Row>((group) => [
       { kind: 'group' as const, key: `group-${group.muscleGroup}`, group },
-      ...group.exercises.map((exercise) => ({
-        kind: 'exercise' as const,
+      ...group.exercises.map<ExerciseRow>((exercise) => ({
+        kind: 'exercise',
         key: `group-${group.muscleGroup}-${exercise.templateId}`,
         templateId: exercise.templateId,
         title: exercise.title,
-        detail: `${exercise.workingSets} working sets`,
+        figures: [countFigure(exercise.workingSets)],
+        sub: true,
       })),
     ]),
-    { kind: 'heading' as const, key: 'heading-latest', text: 'Most recent session' },
-    { kind: 'session' as const, key: `session-${latest.id}`, workout: latest },
-    ...latest.exercises.map<Row>((exercise) => ({
-      kind: 'exercise' as const,
-      key: `latest-${exercise.index}-${exercise.exercise_template_id}`,
-      templateId: exercise.exercise_template_id,
-      title: exercise.title,
-      detail: exercise.sets.map(describeLoggedSet).join('   '),
-    })),
+    { kind: 'session-head' as const, key: `head-session-${latest.id}`, workout: latest },
+    ...latest.exercises.map<ExerciseRow>((exercise) => {
+      const working = exercise.sets.filter(isWorkingSet);
+      return {
+        kind: 'exercise',
+        key: `latest-${exercise.index}-${exercise.exercise_template_id}`,
+        templateId: exercise.exercise_template_id,
+        title: exercise.title,
+        figures: [
+          loadFigure(working.map((set) => set.weight_kg)),
+          repsFigure(
+            working.length,
+            working.map((set) => set.reps)
+          ),
+        ],
+        sub: false,
+      };
+    }),
   ];
 }
 
 /**
- * The week as it was actually trained. Every count is of the user's own logged sets, and every one
- * of them opens the history behind it — nothing is measured against a weekly target, because the
- * rules engine owns those and its spec has not landed.
+ * The score sheet for the week just gone. Every count is of the user's own logged sets, and every
+ * one of them opens the history behind it — nothing is measured against a weekly target, because
+ * the rules engine owns those and its spec has not landed.
  */
 export default function ReviewScreen() {
   const workouts = useRecentWorkouts(CONTEXT_WINDOW_DAYS);
@@ -99,7 +119,7 @@ export default function ReviewScreen() {
         getItemType={(row) => row.kind}
         keyExtractor={(row) => row.key}
         ListHeaderComponent={
-          <ReviewHeader
+          <ReviewHead
             sessionCount={sessions.length}
             offline={<QueryStatus query={workouts} hasRows whenEmpty={NOTHING_LOGGED} />}
             library={
@@ -127,84 +147,81 @@ export default function ReviewScreen() {
   );
 }
 
-type ReviewHeaderProps = {
+type ReviewHeadProps = {
   readonly sessionCount: number;
   readonly offline: React.ReactNode;
   readonly library: React.ReactNode;
 };
 
-function ReviewHeader({ sessionCount, offline, library }: ReviewHeaderProps) {
+function ReviewHead({ sessionCount, offline, library }: ReviewHeadProps) {
   return (
-    <Settle visible={sessionCount > 0} style={styles.header}>
+    <Settle visible={sessionCount > 0}>
+      <StampedHead>
+        <StampedField stamp="Week" value={`Last ${CONTEXT_WINDOW_DAYS} days`} />
+        <StampedField
+          stamp="Sessions"
+          value={sessionCount === 1 ? '1 logged' : `${sessionCount} logged`}
+          trailing
+        />
+      </StampedHead>
       {offline}
-      <ThemedText type="subtitle">
-        {`${sessionCount} ${sessionCount === 1 ? 'session' : 'sessions'}`}
-      </ThemedText>
-      <ThemedText type="small" themeColor="inkSecondary">
-        {`In the last ${CONTEXT_WINDOW_DAYS} days.`}
-      </ThemedText>
       {library}
     </Settle>
   );
 }
 
 function ReviewRow({ row }: { row: Row }) {
-  if (row.kind === 'heading') {
-    return (
-      <View style={styles.headingRow}>
-        <ThemedText>{row.text}</ThemedText>
-      </View>
-    );
+  if (row.kind === 'volume-head') {
+    return <RuledHeader label="Working sets by muscle group" columns={VOLUME_COLUMNS} />;
   }
 
   if (row.kind === 'group') {
     return (
-      <View style={styles.groupRow}>
-        <ThemedText>{formatMuscleGroup(row.group.muscleGroup)}</ThemedText>
-        <ThemedText themeColor="inkSecondary">{`${row.group.workingSets} sets`}</ThemedText>
-      </View>
+      <RuledRow
+        label={formatMuscleGroup(row.group.muscleGroup)}
+        figures={[countFigure(row.group.workingSets)]}
+      />
     );
   }
 
-  if (row.kind === 'session') {
+  if (row.kind === 'session-head') {
     return (
-      <View style={styles.groupRow}>
-        <ThemedText>{row.workout.title}</ThemedText>
-        <ThemedText type="small" themeColor="inkSecondary">
+      <View style={styles.sessionHead}>
+        <Stamp>Most recent session</Stamp>
+        <ThemedText type="subtitle" style={styles.sessionTitle}>
+          {row.workout.title}
+        </ThemedText>
+        <ThemedText type="small" themeColor="inkSecondary" style={styles.sessionDate}>
           {formatDate(row.workout.start_time)}
         </ThemedText>
+        <RuledHeader label="Exercise" columns={SESSION_COLUMNS} />
       </View>
     );
   }
 
   return (
-    <View style={styles.indented}>
-      <LiftLink
-        pathname={LIFT_DETAIL_PATHNAME}
-        templateId={row.templateId}
-        title={row.title}
-        detail={row.detail}
-      />
-    </View>
+    <LiftLink
+      pathname={LIFT_DETAIL_PATHNAME}
+      templateId={row.templateId}
+      title={row.title}
+      figures={row.figures}
+      sub={row.sub}
+    />
   );
 }
 
+const TITLE_SIZE = 22;
+const TITLE_LINE_HEIGHT = 28;
+
 const styles = StyleSheet.create({
-  header: {
-    gap: Spacing.half,
+  sessionHead: {
+    paddingTop: Spacing.six,
+  },
+  sessionTitle: {
+    fontSize: TITLE_SIZE,
+    lineHeight: TITLE_LINE_HEIGHT,
+  },
+  sessionDate: {
     paddingBottom: Spacing.three,
-  },
-  headingRow: {
-    paddingTop: Spacing.five,
-    paddingBottom: Spacing.two,
-  },
-  groupRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'baseline',
-    paddingTop: Spacing.three,
-  },
-  indented: {
-    paddingLeft: Spacing.three,
   },
 });

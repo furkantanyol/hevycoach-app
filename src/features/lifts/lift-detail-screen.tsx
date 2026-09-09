@@ -5,11 +5,14 @@ import { StyleSheet, View } from 'react-native';
 
 import { oneRepMaxTrend, type SessionEstimate } from './e1rm';
 import { OneRepMaxChart } from './e1rm-chart';
-import { describeLoggedSet, formatDate } from './format';
+import { loadFigure } from './figures';
+import { formatDate, joinNote } from './format';
 import { toSessions, type LoggedSession } from './history';
 import { collectNotes, findExerciseTitle, type LiftNote } from './notes';
 
-import { Settle } from '@/components/motion';
+import { Rule, Settle } from '@/components/motion';
+import { RuledHeader, RuledRow } from '@/components/ruled-row';
+import { Stamp } from '@/components/stamp';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Screen, Spacing } from '@/constants/theme';
@@ -24,10 +27,17 @@ type LiftParams = {
 
 type Row =
   | { readonly kind: 'session'; readonly key: string; readonly session: LoggedSession }
-  | { readonly kind: 'set'; readonly key: string; readonly entry: ExerciseHistoryEntry };
+  | {
+      readonly kind: 'set';
+      readonly key: string;
+      readonly entry: ExerciseHistoryEntry;
+      readonly number: number;
+    };
 
 const FALLBACK_TITLE = 'Lift';
 const NOTHING_LOGGED = 'No logged sets for this exercise yet.';
+const HISTORY_COLUMNS = ['Load kg', 'Reps'];
+const NORMAL_SET = 'normal';
 
 function toRows(sessions: readonly LoggedSession[]): Row[] {
   return sessions.flatMap<Row>((session) => [
@@ -36,6 +46,7 @@ function toRows(sessions: readonly LoggedSession[]): Row[] {
       kind: 'set' as const,
       key: `set-${session.workoutId}-${index}`,
       entry,
+      number: index + 1,
     })),
   ]);
 }
@@ -77,9 +88,9 @@ export default function LiftDetailScreen() {
         }
         renderItem={({ item }) =>
           item.kind === 'session' ? (
-            <SessionHeaderRow session={item.session} />
+            <SessionHead session={item.session} />
           ) : (
-            <SetRow entry={item.entry} />
+            <SetRow entry={item.entry} number={item.number} />
           )
         }
       />
@@ -96,11 +107,14 @@ type LiftHeaderProps = {
 
 function LiftHeader({ visible, trend, notes, offline }: LiftHeaderProps) {
   return (
-    <Settle visible={visible} style={styles.header}>
+    <Settle visible={visible}>
       {offline}
       <View style={styles.section}>
-        <ThemedText>Estimated 1RM</ThemedText>
-        <OneRepMaxChart points={trend} />
+        <Stamp>Estimated 1RM</Stamp>
+        <Rule weight="ink" />
+        <View style={styles.chart}>
+          <OneRepMaxChart points={trend} />
+        </View>
         <ThemedText type="small" themeColor="inkSecondary">
           An estimate from your best working set in each session, by the Epley formula. It is not a
           tested max and it is not a target.
@@ -108,60 +122,63 @@ function LiftHeader({ visible, trend, notes, offline }: LiftHeaderProps) {
       </View>
       {notes.length > 0 ? (
         <View style={styles.section}>
-          <ThemedText>Your notes</ThemedText>
+          <Stamp>Your notes</Stamp>
+          <Rule weight="ink" />
           {notes.map((note) => (
             <View key={`${note.source}-${note.text}`} style={styles.note}>
+              <ThemedText>{note.text}</ThemedText>
               <ThemedText type="small" themeColor="inkSecondary">
                 {note.source}
               </ThemedText>
-              <ThemedText>{note.text}</ThemedText>
             </View>
           ))}
         </View>
       ) : null}
-      <ThemedText>History</ThemedText>
+      <View style={styles.section}>
+        <RuledHeader label="History" columns={HISTORY_COLUMNS} />
+      </View>
     </Settle>
   );
 }
 
-function SessionHeaderRow({ session }: { session: LoggedSession }) {
+/** The date a run of sets was logged on, stamped over them the way a sheet dates a block. */
+function SessionHead({ session }: { session: LoggedSession }) {
   return (
-    <View style={styles.sessionRow}>
-      <ThemedText type="small" themeColor="inkSecondary">
-        {`${formatDate(session.startTime)} · ${session.title}`}
-      </ThemedText>
+    <View style={styles.sessionHead}>
+      <Stamp>{`${formatDate(session.startTime)} · ${session.title}`}</Stamp>
     </View>
   );
 }
 
-function SetRow({ entry }: { entry: ExerciseHistoryEntry }) {
+function SetRow({ entry, number }: { entry: ExerciseHistoryEntry; number: number }) {
   return (
-    <View style={styles.setRow}>
-      <ThemedText>{describeLoggedSet(entry)}</ThemedText>
-    </View>
+    <RuledRow
+      label={`Set ${number}`}
+      note={joinNote([
+        entry.set_type === NORMAL_SET ? null : entry.set_type,
+        entry.rpe === null ? null : `RPE ${entry.rpe}`,
+        entry.duration_seconds === null ? null : `${entry.duration_seconds}s`,
+        entry.distance_meters === null ? null : `${entry.distance_meters} m`,
+      ])}
+      figures={[loadFigure([entry.weight_kg]), entry.reps === null ? null : String(entry.reps)]}
+    />
   );
 }
-
-const MIN_ROW_HEIGHT = 44;
 
 const styles = StyleSheet.create({
-  header: {
-    gap: Spacing.four,
-    paddingBottom: Spacing.three,
-  },
   section: {
     gap: Spacing.two,
+    paddingTop: Spacing.four,
+  },
+  chart: {
+    paddingTop: Spacing.three,
   },
   note: {
     gap: Spacing.half,
+    paddingTop: Spacing.two,
   },
-  sessionRow: {
-    minHeight: MIN_ROW_HEIGHT,
-    justifyContent: 'flex-end',
-    paddingTop: Spacing.three,
-  },
-  setRow: {
-    minHeight: MIN_ROW_HEIGHT,
-    justifyContent: 'center',
+  sessionHead: {
+    paddingTop: Spacing.four,
+    paddingBottom: Spacing.one,
   },
 });
