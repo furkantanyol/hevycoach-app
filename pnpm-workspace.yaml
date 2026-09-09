@@ -1,5 +1,6 @@
 allowBuilds:
   '@sentry/cli': true
+  unrs-resolver: true
 minimumReleaseAgeExclude:
   - '@expo/cli@57.0.23'
   - '@expo/metro-file-map@57.0.3'
@@ -10,3 +11,4 @@ minimumReleaseAgeExclude:
   - expo-modules-jsi@57.1.0
   - expo-router@57.0.20
   - expo@57.0.21
+  - '@furkantanyol/hevy-client@1.0.0'

@@ -8,8 +8,15 @@
       ],
       "@/assets/*": [
         "./assets/*"
+      ],
+      "@/modules/*": [
+        "./modules/*"
       ]
-    }
+    },
+    "types": [
+      "expo/types",
+      "jest"
+    ]
   },
   "include": [
     "**/*.ts",
