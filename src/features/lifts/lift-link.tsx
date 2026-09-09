@@ -13,16 +13,15 @@ type LiftLinkProps = {
   /** The row's figures, in the same columns as every other row of its table. */
   readonly figures: readonly (string | null)[];
   readonly note?: string | null;
-  readonly lead?: boolean;
   readonly sub?: boolean;
 };
 
 /** A row of the ruled table that happens to open the lift behind it. */
-export function LiftLink({ pathname, templateId, title, figures, note, lead, sub }: LiftLinkProps) {
+export function LiftLink({ pathname, templateId, title, figures, note, sub }: LiftLinkProps) {
   return (
     <Link href={{ pathname, params: { templateId, title } }} asChild>
       <Pressable accessibilityRole="button">
-        <RuledRow label={title} figures={figures} note={note} lead={lead} sub={sub} />
+        <RuledRow label={title} figures={figures} note={note} sub={sub} />
       </Pressable>
     </Link>
   );

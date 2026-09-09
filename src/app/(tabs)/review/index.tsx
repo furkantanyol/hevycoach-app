@@ -188,7 +188,7 @@ function ReviewRow({ row }: { row: Row }) {
     return (
       <View style={styles.sessionHead}>
         <Stamp>Most recent session</Stamp>
-        <ThemedText type="subtitle" style={styles.sessionTitle}>
+        <ThemedText type="subtitle">
           {row.workout.title}
         </ThemedText>
         <ThemedText type="small" themeColor="inkSecondary" style={styles.sessionDate}>
@@ -210,16 +210,9 @@ function ReviewRow({ row }: { row: Row }) {
   );
 }
 
-const TITLE_SIZE = 22;
-const TITLE_LINE_HEIGHT = 28;
-
 const styles = StyleSheet.create({
   sessionHead: {
     paddingTop: Spacing.six,
-  },
-  sessionTitle: {
-    fontSize: TITLE_SIZE,
-    lineHeight: TITLE_LINE_HEIGHT,
   },
   sessionDate: {
     paddingBottom: Spacing.three,

@@ -51,17 +51,25 @@ have. The point of this one is that it is defensible, monotonic in the one
 signal available, and honest about being an estimate. It is not tuned, and it
 should not be tuned without something to tune against.
 
-### Bodyweight comes from Hevy, with a fallback
+### Bodyweight comes from Hevy, and only from Hevy
 
 The estimate is per kilogram, so it needs a bodyweight. The export reads the
 newest Hevy body measurement carrying a `weight_kg` (`bodyMeasurements.list`
-returns newest first) and uses that. If the call fails, or the user has never
-recorded a weight, it falls back to 80 kg.
+returns newest first) and uses that.
 
-The fallback never fails the export. A wrong bodyweight makes the estimate
-wrong by the ratio of the two weights — an estimate that is 20% off is still
-worth more than a zero, and losing the whole export over a missing measurement
-would not be.
+**Amended 2026-09-10.** This originally fell back to a hardcoded 80 kg when the
+call failed or the lifter had never recorded a weight, on the grounds that an
+estimate 20% off beats a zero. That reasoning holds for a number shown on our
+own screen and fails for one written into Apple Health, which is an external
+record other apps read as fact — nothing on the export screen told the lifter
+that a particular run had been priced against a body that was not theirs.
+
+So the fallback is gone. `latestBodyweightKg` returns `null` when Hevy holds no
+weight or the call fails, `estimateEnergyKcal` returns `null` for a null
+bodyweight, and the native record already treats a nil `energyKcal` as "write no
+energy sample". The export still succeeds; the workout simply arrives without an
+energy figure, which is the same place it was before this ADR. Recording a
+weight in Hevy is what turns the estimate on, and the settings copy says so.
 
 ## Tagging the estimate in HealthKit
 

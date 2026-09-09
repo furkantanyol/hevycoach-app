@@ -3,7 +3,11 @@ import { StyleSheet, Text, type TextProps } from 'react-native';
 import { ThemeColor } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
-type TextType = 'default' | 'title' | 'small' | 'subtitle' | 'linkPrimary';
+/** The heading a sheet gives a session or a page. Set once here; no screen overrides it. */
+const SUBTITLE_SIZE = 22;
+const SUBTITLE_LINE_HEIGHT = 28;
+
+type TextType = 'default' | 'small' | 'subtitle';
 
 export type ThemedTextProps = TextProps & {
   type?: TextType;
@@ -18,9 +22,7 @@ export type ThemedTextProps = TextProps & {
 const ramps: Record<TextType, TextProps['dynamicTypeRamp']> = {
   small: 'subheadline',
   default: 'body',
-  title: 'largeTitle',
   subtitle: 'title1',
-  linkPrimary: 'subheadline',
 };
 
 export function ThemedText({ style, type = 'default', themeColor, ...rest }: ThemedTextProps) {
@@ -41,18 +43,9 @@ const styles = StyleSheet.create({
     lineHeight: 24,
     fontWeight: 500,
   },
-  title: {
-    fontSize: 48,
-    fontWeight: 600,
-    lineHeight: 52,
-  },
   subtitle: {
-    fontSize: 32,
-    lineHeight: 44,
+    fontSize: SUBTITLE_SIZE,
+    lineHeight: SUBTITLE_LINE_HEIGHT,
     fontWeight: 600,
-  },
-  linkPrimary: {
-    lineHeight: 30,
-    fontSize: 14,
   },
 });

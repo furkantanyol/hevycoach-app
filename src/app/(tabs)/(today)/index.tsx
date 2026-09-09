@@ -28,8 +28,8 @@ const LOGGED_COLUMNS = ['Load kg', 'Reps'];
 
 /**
  * The sheet, read one-handed between sets: the week as a chart with today under the marker, and
- * the session that column stands for as a ruled table below it. Dragging the marker along the
- * chart re-rules the table to that day, which is the only navigation this screen has.
+ * the day being read as a ruled table below it. Dragging along the chart re-rules the table to
+ * that day, which is the only navigation this screen has; the marker stays on today throughout.
  *
  * Every figure on it is Hevy's own — a routine's stored target, or a set the lifter logged. The
  * rules engine that will compute a target does not exist yet, and a made-up one would be worse
@@ -68,7 +68,7 @@ export default function TodayScreen() {
         <WeekStrip days={week} selectedKey={selected.key} onSelect={setSelectedKey} />
 
         <Settle visible={!routines.isPending} style={styles.session}>
-          <ThemedText type="subtitle" style={styles.sessionTitle}>
+          <ThemedText type="subtitle">
             {session.title}
           </ThemedText>
           <ThemedText type="small" themeColor="inkSecondary">
@@ -181,9 +181,5 @@ const styles = StyleSheet.create({
     gap: Spacing.half,
     paddingTop: Spacing.four,
     paddingBottom: Spacing.three,
-  },
-  sessionTitle: {
-    fontSize: 22,
-    lineHeight: 28,
   },
 });

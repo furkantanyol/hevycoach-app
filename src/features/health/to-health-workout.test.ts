@@ -1,11 +1,11 @@
 import type { Workout } from '@furkantanyol/hevy-client';
 
-import { DEFAULT_BODYWEIGHT_KG } from './estimate-energy';
 import { EXPORT_FORMAT_VERSION, toHealthWorkout } from './to-health-workout';
 
 const UPDATED_AT_EPOCH_SECONDS = 1788854760;
-/** 65 minutes with no RPE logged: the midpoint 4.75 METs at the default 80 kg. */
-const DEFAULT_BODYWEIGHT_KG_ENERGY_KCAL = 412;
+const BODYWEIGHT_KG = 80;
+/** 65 minutes with no RPE logged: the midpoint 4.75 METs at 80 kg. */
+const ENERGY_KCAL = 412;
 
 function buildWorkout(overrides: Partial<Workout> = {}): Workout {
   return {
@@ -24,22 +24,22 @@ function buildWorkout(overrides: Partial<Workout> = {}): Workout {
 
 describe('toHealthWorkout', () => {
   it('should map a Hevy workout onto the Apple Health shape', () => {
-    const healthWorkout = toHealthWorkout(buildWorkout(), DEFAULT_BODYWEIGHT_KG);
+    const healthWorkout = toHealthWorkout(buildWorkout(), BODYWEIGHT_KG);
 
     expect(healthWorkout).toEqual({
       id: 'b459cba5-cd6d-463c-abd6-54f8eafcadcb',
       title: 'Push A',
       startTime: '2026-09-08T07:00:00Z',
       endTime: '2026-09-08T08:05:00Z',
-      energyKcal: DEFAULT_BODYWEIGHT_KG_ENERGY_KCAL,
+      energyKcal: ENERGY_KCAL,
       version: UPDATED_AT_EPOCH_SECONDS + EXPORT_FORMAT_VERSION,
     });
   });
 
-  it('should fall back to the default bodyweight when none is given', () => {
-    const healthWorkout = toHealthWorkout(buildWorkout());
+  it('should write no energy when Hevy holds no bodyweight', () => {
+    const healthWorkout = toHealthWorkout(buildWorkout(), null);
 
-    expect(healthWorkout.energyKcal).toBe(DEFAULT_BODYWEIGHT_KG_ENERGY_KCAL);
+    expect(healthWorkout.energyKcal).toBeNull();
   });
 
   it('should estimate more energy for a heavier lifter', () => {
@@ -49,8 +49,11 @@ describe('toHealthWorkout', () => {
   });
 
   it('should raise the version when the workout is edited later in Hevy', () => {
-    const exported = toHealthWorkout(buildWorkout());
-    const edited = toHealthWorkout(buildWorkout({ updated_at: '2026-09-08T09:30:00Z' }));
+    const exported = toHealthWorkout(buildWorkout(), BODYWEIGHT_KG);
+    const edited = toHealthWorkout(
+      buildWorkout({ updated_at: '2026-09-08T09:30:00Z' }),
+      BODYWEIGHT_KG,
+    );
 
     expect(edited.version).toBeGreaterThan(exported.version);
   });

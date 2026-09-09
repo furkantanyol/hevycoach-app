@@ -4,6 +4,9 @@ Hevy data in, next week's routines out. Phase A is the foundation: your Hevy
 history is pulled with the [Hevy client](https://www.npmjs.com/package/@furkantanyol/hevy-client)
 and exported into Apple Health through a local Expo Module, idempotently.
 
+The interface is drawn in one form, the Block Chart — its tokens, primitives,
+motion grammar, finish review and verdict are in [DESIGN.md](DESIGN.md).
+
 ## Stack
 
 - Expo SDK 57, React Native 0.86, New Architecture, Expo Router (`src/app/`)

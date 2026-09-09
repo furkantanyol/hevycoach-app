@@ -1,14 +1,10 @@
 import { View, type ViewProps } from 'react-native';
 
-import { ThemeColor } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
-export type ThemedViewProps = ViewProps & {
-  type?: ThemeColor;
-};
-
-export function ThemedView({ style, type, ...otherProps }: ThemedViewProps) {
+/** Every screen stands on the same paper, which is the only thing this has ever been asked for. */
+export function ThemedView({ style, ...otherProps }: ViewProps) {
   const theme = useTheme();
 
-  return <View style={[{ backgroundColor: theme[type ?? 'ground'] }, style]} {...otherProps} />;
+  return <View style={[{ backgroundColor: theme.ground }, style]} {...otherProps} />;
 }

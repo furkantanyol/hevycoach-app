@@ -13,7 +13,11 @@
 
 import { StyleSheet } from 'react-native';
 
-/** Five bands, lightest to darkest. Step 5 is always the heaviest session on screen. */
+/**
+ * Five bands, lightest to darkest. Step 5 is always the heaviest session on screen. The ramp starts
+ * clear of the ground rather than beside it — a day with nothing planned draws no band at all, so
+ * the lightest band has to be the one thing it can never be mistaken for under gym light.
+ */
 export const LOAD_STEPS = [1, 2, 3, 4, 5] as const;
 
 export type LoadStep = (typeof LOAD_STEPS)[number];
@@ -33,10 +37,15 @@ type Palette = Record<LoadKey, string> & {
 export type ThemeColor = keyof Palette;
 
 /**
- * The one chromatic colour in the app, reserved by law for "today" and "you are here". It is the
- * same value in both appearances because a highlighter glows on dark paper as it does on white.
+ * The one chromatic colour in the app, reserved by law for today and drawn nowhere else. It is the
+ * same value in both appearances because a highlighter glows on dark paper as it does on white —
+ * but on white paper it is barely 1.1:1 against the ground, so the marker is always drawn with the
+ * ink edges below rather than as a bare fill. The edge, not the fill, is what makes it findable.
  */
 const MARKER = '#E8FF3B';
+
+/** The ink edges that bracket the marker, so today is legible on paper-white as well as on black. */
+export const MARKER_EDGE_WIDTH = 1.5;
 
 const NEAR_BLACK = '#111111';
 
@@ -48,10 +57,10 @@ export const Colors: { readonly light: Palette; readonly dark: Palette } = {
     inkSecondary: '#6E6E6E',
     inkOnMarker: NEAR_BLACK,
     marker: MARKER,
-    load1: '#EDEDED',
-    load2: '#D2D2D2',
-    load3: '#ADADAD',
-    load4: '#787878',
+    load1: '#D4D4D4',
+    load2: '#B0B0B0',
+    load3: '#8A8A8A',
+    load4: '#626262',
     load5: '#3A3A3A',
   },
   dark: {
@@ -61,10 +70,10 @@ export const Colors: { readonly light: Palette; readonly dark: Palette } = {
     inkSecondary: '#9C9C9C',
     inkOnMarker: NEAR_BLACK,
     marker: MARKER,
-    load1: '#1B1B1B',
-    load2: '#2F2F2F',
-    load3: '#4C4C4C',
-    load4: '#7C7C7C',
+    load1: '#2E2E2E',
+    load2: '#484848',
+    load3: '#676767',
+    load4: '#909090',
     load5: '#BEBEBE',
   },
 } as const;

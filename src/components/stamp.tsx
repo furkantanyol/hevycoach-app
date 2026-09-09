@@ -11,8 +11,6 @@ const STAMP_LINE_HEIGHT = 14;
 
 type StampProps = Omit<TextProps, 'children'> & {
   readonly children: string;
-  /** A stamp on the marker is written in near-black, the way a highlighter leaves text alone. */
-  readonly onMarker?: boolean;
 };
 
 /**
@@ -20,13 +18,13 @@ type StampProps = Omit<TextProps, 'children'> & {
  * LAST. It labels a column or a section and is never the thing being read, so it stays small and
  * secondary while the figures beside it carry the size.
  */
-export function Stamp({ children, onMarker = false, style, ...rest }: StampProps) {
+export function Stamp({ children, style, ...rest }: StampProps) {
   const theme = useTheme();
 
   return (
     <Text
       dynamicTypeRamp="caption1"
-      style={[styles.stamp, { color: onMarker ? theme.inkOnMarker : theme.inkSecondary }, style]}
+      style={[styles.stamp, { color: theme.inkSecondary }, style]}
       {...rest}
     >
       {children.toUpperCase()}

@@ -1,13 +1,6 @@
 import type { Workout, WorkoutSet } from '@furkantanyol/hevy-client';
 
-import {
-  averageRpe,
-  DEFAULT_BODYWEIGHT_KG,
-  estimateEnergyKcal,
-  metsForRpe,
-  MAX_MET,
-  MIN_MET,
-} from './estimate-energy';
+import { averageRpe, estimateEnergyKcal, metsForRpe, MAX_MET, MIN_MET } from './estimate-energy';
 
 const MIDPOINT_MET = 4.75;
 const ONE_HOUR_IN_SECONDS = 3600;
@@ -96,26 +89,26 @@ describe('estimateEnergyKcal', () => {
     expect(kcal).toBe(475);
   });
 
-  it('should fall back to 80 kg worth of energy when the default bodyweight is used', () => {
+  it('should estimate nothing when no bodyweight was ever logged', () => {
     const kcal = estimateEnergyKcal({
       avgRpe: 8,
-      bodyweightKg: DEFAULT_BODYWEIGHT_KG,
+      bodyweightKg: null,
       durationSeconds: ONE_HOUR_IN_SECONDS,
     });
 
-    expect(kcal).toBe(380);
+    expect(kcal).toBeNull();
   });
 
   it('should return no energy when the workout has no duration', () => {
     const kcal = estimateEnergyKcal({ avgRpe: 8, bodyweightKg: 80, durationSeconds: 0 });
 
-    expect(kcal).toBe(0);
+    expect(kcal).toBeNull();
   });
 
   it('should return no energy when the end time precedes the start time', () => {
     const kcal = estimateEnergyKcal({ avgRpe: 8, bodyweightKg: 80, durationSeconds: -60 });
 
-    expect(kcal).toBe(0);
+    expect(kcal).toBeNull();
   });
 });
 

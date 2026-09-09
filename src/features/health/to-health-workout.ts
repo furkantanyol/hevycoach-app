@@ -1,6 +1,6 @@
 import type { Workout } from '@furkantanyol/hevy-client';
 
-import { averageRpe, DEFAULT_BODYWEIGHT_KG, estimateEnergyKcal } from './estimate-energy';
+import { averageRpe, estimateEnergyKcal } from './estimate-energy';
 
 import type { HealthWorkout } from '@/modules/health-export';
 
@@ -20,7 +20,7 @@ export const EXPORT_FORMAT_VERSION = 1;
  */
 export function toHealthWorkout(
   workout: Workout,
-  bodyweightKg: number = DEFAULT_BODYWEIGHT_KG,
+  bodyweightKg: number | null,
 ): HealthWorkout {
   const updatedAtEpochSeconds = Math.floor(
     Date.parse(workout.updated_at) / MILLISECONDS_PER_SECOND,

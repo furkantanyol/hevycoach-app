@@ -27,7 +27,7 @@ export default function ProScreen() {
       <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={Screen.scrollContent}>
         <View style={styles.head}>
           <Stamp>Access</Stamp>
-          <ThemedText type="subtitle" style={styles.title}>
+          <ThemedText type="subtitle">
             HevyCoach needs Hevy Pro
           </ThemedText>
           <Rule weight="ink" />
@@ -49,9 +49,6 @@ export default function ProScreen() {
   );
 }
 
-const TITLE_SIZE = 22;
-const TITLE_LINE_HEIGHT = 28;
-
 const styles = StyleSheet.create({
   actions: {
     gap: Spacing.two,
@@ -59,9 +56,5 @@ const styles = StyleSheet.create({
   head: {
     gap: Spacing.one,
     paddingBottom: Spacing.two,
-  },
-  title: {
-    fontSize: TITLE_SIZE,
-    lineHeight: TITLE_LINE_HEIGHT,
   },
 });

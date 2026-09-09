@@ -84,7 +84,7 @@ function SessionHead({ routine }: { routine: Routine }) {
 
   return (
     <View style={styles.session}>
-      <ThemedText type="subtitle" style={styles.title}>
+      <ThemedText type="subtitle">
         {routine.title}
       </ThemedText>
       <ThemedText type="small" themeColor="inkSecondary" style={styles.count}>
@@ -95,16 +95,9 @@ function SessionHead({ routine }: { routine: Routine }) {
   );
 }
 
-const TITLE_SIZE = 22;
-const TITLE_LINE_HEIGHT = 28;
-
 const styles = StyleSheet.create({
   session: {
     paddingTop: Spacing.five,
-  },
-  title: {
-    fontSize: TITLE_SIZE,
-    lineHeight: TITLE_LINE_HEIGHT,
   },
   count: {
     paddingBottom: Spacing.three,

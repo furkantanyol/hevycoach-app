@@ -1,7 +1,6 @@
 import { type HevyClient } from '@furkantanyol/hevy-client';
 import { useCallback, useState } from 'react';
 
-import { DEFAULT_BODYWEIGHT_KG } from './estimate-energy';
 import { toHealthWorkout } from './to-health-workout';
 
 import { hevyClient } from '@/features/hevy/client';
@@ -47,16 +46,16 @@ export function useHealthExport() {
 /**
  * Newest measurement that recorded a weight; measurements are listed newest first and only some of
  * them carry one. The energy estimate is the only thing this feeds, so a missing or unreachable
- * bodyweight falls back to the default rather than failing the export.
+ * bodyweight returns null and the export goes ahead without an energy figure rather than failing.
  */
-async function latestBodyweightKg(client: HevyClient): Promise<number> {
+async function latestBodyweightKg(client: HevyClient): Promise<number | null> {
   try {
     const page = await client.bodyMeasurements.list({ pageSize: EXPORT_PAGE_SIZE });
     const weighed = page.body_measurements.find(
       (measurement) => typeof measurement.weight_kg === 'number',
     );
-    return weighed?.weight_kg ?? DEFAULT_BODYWEIGHT_KG;
+    return weighed?.weight_kg ?? null;
   } catch {
-    return DEFAULT_BODYWEIGHT_KG;
+    return null;
   }
 }

@@ -8,9 +8,6 @@ export const MAX_MET = 6;
 export const MIN_RPE = 6;
 export const MAX_RPE = 10;
 
-/** Used when Hevy has no body measurement carrying a weight. */
-export const DEFAULT_BODYWEIGHT_KG = 80;
-
 const MIDPOINT_MET = (MIN_MET + MAX_MET) / 2;
 const SECONDS_PER_HOUR = 3600;
 
@@ -35,18 +32,23 @@ export function averageRpe(workout: Workout): number | null {
 
 type EnergyEstimateInput = {
   avgRpe: number | null;
-  bodyweightKg: number;
+  /** The lifter's own logged bodyweight, or null when Hevy holds none. */
+  bodyweightKg: number | null;
   durationSeconds: number;
 };
 
-/** One MET is about one kcal per kilogram per hour, which is the whole of the estimate. */
+/**
+ * One MET is about one kcal per kilogram per hour, which is the whole of the estimate. Null when
+ * there is nothing honest to estimate from: Apple Health is an external record other apps read as
+ * fact, and a number built on an invented bodyweight would be a fact we made up.
+ */
 export function estimateEnergyKcal({
   avgRpe,
   bodyweightKg,
   durationSeconds,
-}: EnergyEstimateInput): number {
-  if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
-    return 0;
+}: EnergyEstimateInput): number | null {
+  if (bodyweightKg === null || !Number.isFinite(durationSeconds) || durationSeconds <= 0) {
+    return null;
   }
   const hours = durationSeconds / SECONDS_PER_HOUR;
   return Math.max(0, Math.round(metsForRpe(avgRpe) * bodyweightKg * hours));
