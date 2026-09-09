@@ -12,9 +12,6 @@ export default function HomeScreen() {
       <ThemedText themeColor="textSecondary">
         Your Hevy history in, next week&apos;s routines out.
       </ThemedText>
-      <Link href="/sync">
-        <ThemedText type="linkPrimary">Sync</ThemedText>
-      </Link>
       <Link href="/settings">
         <ThemedText type="linkPrimary">Settings</ThemedText>
       </Link>

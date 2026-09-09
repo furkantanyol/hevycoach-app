@@ -10,7 +10,6 @@ import {
 import { useEffect } from 'react';
 import { useColorScheme } from 'react-native';
 
-import { DatabaseProvider } from '@/db/provider';
 import { persister, queryClient, startOnlineWatch } from '@/lib/query-client';
 
 const navigationIntegration = Sentry.reactNavigationIntegration();
@@ -35,15 +34,12 @@ function RootLayout() {
 
   return (
     <PersistQueryClientProvider client={queryClient} persistOptions={{ persister }}>
-      <DatabaseProvider>
-        <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-          <Stack>
-            <Stack.Screen name="index" options={{ title: 'HevyCoach' }} />
-            <Stack.Screen name="settings" options={{ title: 'Settings' }} />
-            <Stack.Screen name="sync" options={{ title: 'Sync' }} />
-          </Stack>
-        </ThemeProvider>
-      </DatabaseProvider>
+      <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+        <Stack>
+          <Stack.Screen name="index" options={{ title: 'HevyCoach' }} />
+          <Stack.Screen name="settings" options={{ title: 'Settings' }} />
+        </Stack>
+      </ThemeProvider>
     </PersistQueryClientProvider>
   );
 }

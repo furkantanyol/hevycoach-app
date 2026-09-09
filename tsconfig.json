@@ -15,7 +15,8 @@
     },
     "types": [
       "expo/types",
-      "jest"
+      "jest",
+      "node"
     ]
   },
   "exclude": [
