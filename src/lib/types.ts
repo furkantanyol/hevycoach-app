@@ -4,7 +4,7 @@
  * everything here arrives from the server and is rendered, never cached.
  */
 
-export type Goal = 'muscle' | 'strength' | 'both' | 'fat_loss' | 'longevity' | 'athletic';
+export type Goal = 'muscle' | 'strength' | 'fat_loss' | 'longevity' | 'athletic';
 
 export type Injury = 'knee' | 'shoulder' | 'lower_back' | 'elbow_wrist' | 'hip' | 'other';
 
@@ -13,8 +13,8 @@ export interface Profile {
   age: number;
   heightCm: number;
   bodyweightKg: number;
-  primaryGoal: Goal;
-  secondaryGoal: Goal | null;
+  /** At least one, no duplicates: one multi-select in onboarding. */
+  goals: Goal[];
   daysPerWeek: number;
   sessionMinutes: number;
   yearsTraining: '<1' | '1-3' | '3-5' | '5+';

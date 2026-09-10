@@ -9,8 +9,7 @@ const PROFILE: Profile = {
   age: 32,
   heightCm: 183,
   bodyweightKg: 84,
-  primaryGoal: 'muscle',
-  secondaryGoal: null,
+  goals: ['muscle'],
   daysPerWeek: 4,
   sessionMinutes: 75,
   yearsTraining: '3-5',
@@ -62,8 +61,8 @@ describe('validateProfile', () => {
     expect(validateProfile({ ...PROFILE })).toEqual({ profile: PROFILE });
   });
 
-  it('should accept a null secondary goal', () => {
-    expect(errorOf({ ...PROFILE, secondaryGoal: null })).toBeUndefined();
+  it('should accept several goals', () => {
+    expect(errorOf({ ...PROFILE, goals: ['muscle', 'strength'] })).toBeUndefined();
   });
 
   it('should reject a body that is not an object', () => {
@@ -74,8 +73,16 @@ describe('validateProfile', () => {
     expect(errorOf({ ...PROFILE, sex: 'unspecified' })).toBe('sex must be one of male, female, other');
   });
 
-  it('should name the field when a secondary goal is neither null nor a goal', () => {
-    expect(errorOf({ ...PROFILE, secondaryGoal: 'hypertrophy' })).toMatch(/^secondaryGoal must be null or one of /);
+  it('should name the field when a goal is not an option', () => {
+    expect(errorOf({ ...PROFILE, goals: ['hypertrophy'] })).toMatch(/^goals must be a non-empty array of /);
+  });
+
+  it('should name the field when the goals are empty', () => {
+    expect(errorOf({ ...PROFILE, goals: [] })).toMatch(/^goals must be a non-empty array of /);
+  });
+
+  it('should name the field when a goal is chosen twice', () => {
+    expect(errorOf({ ...PROFILE, goals: ['muscle', 'muscle'] })).toMatch(/each at most once$/);
   });
 
   it('should reject an age below the accepted range', () => {

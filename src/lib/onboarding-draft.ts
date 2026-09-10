@@ -12,16 +12,15 @@ import type { Goal, Injury, PrefillResponse, Profile } from './types';
 /**
  * Numbers are held as the raw text of their input so a field can be empty
  * while it is being retyped; everything else is the profile value, or null for
- * "not answered yet". `secondaryGoal` and `injuries` are the two fields whose
- * empty answer is a real answer, so the flow never blocks on them.
+ * "not answered yet". `injuries` is the one field whose empty answer is a real
+ * answer, so the flow never blocks on it.
  */
 export interface Draft {
   readonly sex: Profile['sex'] | null;
   readonly age: string;
   readonly heightCm: string;
   readonly bodyweightKg: string;
-  readonly primaryGoal: Goal | null;
-  readonly secondaryGoal: Goal | null;
+  readonly goals: readonly Goal[];
   readonly daysPerWeek: number | null;
   readonly sessionMinutes: number | null;
   readonly yearsTraining: Profile['yearsTraining'] | null;
@@ -60,8 +59,7 @@ const EMPTY_DRAFT: Draft = {
   age: '',
   heightCm: '',
   bodyweightKg: '',
-  primaryGoal: null,
-  secondaryGoal: null,
+  goals: [],
   daysPerWeek: null,
   sessionMinutes: null,
   yearsTraining: null,
@@ -133,8 +131,7 @@ function draftFromProfile(profile: Profile): Draft {
     age: String(profile.age),
     heightCm: String(profile.heightCm),
     bodyweightKg: String(profile.bodyweightKg),
-    primaryGoal: profile.primaryGoal,
-    secondaryGoal: profile.secondaryGoal,
+    goals: profile.goals,
     daysPerWeek: profile.daysPerWeek,
     sessionMinutes: profile.sessionMinutes,
     yearsTraining: profile.yearsTraining,
@@ -199,8 +196,7 @@ const ANSWERED: Readonly<Record<ProfileField, FieldCheck>> = {
   age: (current) => boundedNumber(current.age, RANGES.age) !== null,
   heightCm: (current) => boundedNumber(current.heightCm, RANGES.heightCm) !== null,
   bodyweightKg: (current) => boundedNumber(current.bodyweightKg, RANGES.bodyweightKg) !== null,
-  primaryGoal: (current) => current.primaryGoal !== null,
-  secondaryGoal: () => true,
+  goals: (current) => current.goals.length > 0,
   daysPerWeek: (current) => current.daysPerWeek !== null,
   sessionMinutes: (current) => current.sessionMinutes !== null,
   yearsTraining: (current) => current.yearsTraining !== null,
@@ -224,7 +220,7 @@ export function draftProfile(current: Draft): Profile | null {
   const heightCm = boundedNumber(current.heightCm, RANGES.heightCm);
   const bodyweightKg = boundedNumber(current.bodyweightKg, RANGES.bodyweightKg);
   if (age === null || heightCm === null || bodyweightKg === null) return null;
-  if (current.sex === null || current.primaryGoal === null) return null;
+  if (current.sex === null || current.goals.length === 0) return null;
   if (current.daysPerWeek === null || current.sessionMinutes === null) return null;
   if (current.yearsTraining === null || current.equipment === null) return null;
   if (current.trainingStyle === null || current.cardio === null) return null;
@@ -235,8 +231,7 @@ export function draftProfile(current: Draft): Profile | null {
     age,
     heightCm,
     bodyweightKg,
-    primaryGoal: current.primaryGoal,
-    secondaryGoal: current.secondaryGoal,
+    goals: [...current.goals],
     daysPerWeek: current.daysPerWeek,
     sessionMinutes: current.sessionMinutes,
     yearsTraining: current.yearsTraining,

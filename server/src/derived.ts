@@ -214,13 +214,6 @@ const option =
   (value) =>
     typeof value === 'string' && options.includes(value) ? null : `must be one of ${listed(options)}`;
 
-const optionOrNull =
-  (options: readonly string[]): Check =>
-  (value) => {
-    if (value === null) return null;
-    return option(options)(value) === null ? null : `must be null or one of ${listed(options)}`;
-  };
-
 const range =
   ({ min, max }: Range): Check =>
   (value) =>
@@ -228,12 +221,21 @@ const range =
       ? null
       : `must be a number between ${min} and ${max}`;
 
+function isOptionList(options: readonly string[], value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item: unknown) => typeof item === 'string' && options.includes(item));
+}
+
 const multiSelect =
   (options: readonly string[]): Check =>
+  (value) => (isOptionList(options, value) ? null : `must be an array of ${listed(options)}`);
+
+/** The goals rule of `isProfile`, so a profile this accepts is one the next load keeps. */
+const uniqueMultiSelect =
+  (options: readonly string[]): Check =>
   (value) =>
-    Array.isArray(value) && value.every((item: unknown) => typeof item === 'string' && options.includes(item))
+    isOptionList(options, value) && value.length > 0 && new Set(value).size === value.length
       ? null
-      : `must be an array of ${listed(options)}`;
+      : `must be a non-empty array of ${listed(options)}, each at most once`;
 
 const text =
   (max: number): Check =>
@@ -246,8 +248,7 @@ const CHECKS: Record<keyof Profile, Check> = {
   age: range(RANGES.age),
   heightCm: range(RANGES.heightCm),
   bodyweightKg: range(RANGES.bodyweightKg),
-  primaryGoal: option(GOALS),
-  secondaryGoal: optionOrNull(GOALS),
+  goals: uniqueMultiSelect(GOALS),
   daysPerWeek: range(RANGES.daysPerWeek),
   sessionMinutes: range(RANGES.sessionMinutes),
   yearsTraining: option(YEARS_TRAINING),

@@ -35,7 +35,7 @@ const said = (text: string): Message => ({ id: 'm-1', role: 'user', text, create
 
 const PROFILE: Profile = {
   sex: 'male', age: 34, heightCm: 180, bodyweightKg: 82,
-  primaryGoal: 'strength', secondaryGoal: 'muscle',
+  goals: ['strength', 'muscle'],
   daysPerWeek: 3, sessionMinutes: 60, yearsTraining: '3-5',
   equipment: 'full_gym', trainingStyle: 'hybrid', cardio: 'none',
   injuries: [], notes: '',

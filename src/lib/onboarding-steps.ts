@@ -18,7 +18,7 @@ export interface OnboardingStep {
 
 export const ONBOARDING_STEPS: readonly OnboardingStep[] = [
   { step: 1, title: 'About you', fields: ['sex', 'age', 'heightCm'] },
-  { step: 2, title: 'Goals', fields: ['primaryGoal', 'secondaryGoal'] },
+  { step: 2, title: 'Goals', fields: ['goals'] },
   { step: 3, title: 'Training', fields: ['daysPerWeek', 'sessionMinutes', 'yearsTraining'] },
   { step: 4, title: 'Equipment and style', fields: ['equipment', 'trainingStyle', 'cardio'] },
   { step: 5, title: 'Body and limits', fields: ['bodyweightKg', 'injuries', 'notes'] },

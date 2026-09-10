@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const SEXES = ['male', 'female', 'other'] as const;
-export const GOALS = ['muscle', 'strength', 'both', 'fat_loss', 'longevity', 'athletic'] as const;
+export const GOALS = ['muscle', 'strength', 'fat_loss', 'longevity', 'athletic'] as const;
 export const YEARS_TRAINING = ['<1', '1-3', '3-5', '5+'] as const;
 export const EQUIPMENT = ['full_gym', 'home_gym', 'dumbbells', 'bodyweight'] as const;
 export const TRAINING_STYLES = ['powerlifting', 'bodybuilding', 'hybrid', 'athletic'] as const;
@@ -23,8 +23,8 @@ export interface Profile {
   age: number;
   heightCm: number;
   bodyweightKg: number;
-  primaryGoal: Goal;
-  secondaryGoal: Goal | null;
+  /** At least one, no duplicates: one multi-select in onboarding, so muscle and strength together replace the goal that combined them. */
+  goals: Goal[];
   daysPerWeek: number;
   sessionMinutes: number;
   yearsTraining: YearsTraining;
@@ -42,8 +42,7 @@ export const PROFILE_KEYS = [
   'age',
   'heightCm',
   'bodyweightKg',
-  'primaryGoal',
-  'secondaryGoal',
+  'goals',
   'daysPerWeek',
   'sessionMinutes',
   'yearsTraining',
@@ -58,8 +57,13 @@ function isOption<T extends string>(options: readonly T[], value: unknown): valu
   return typeof value === 'string' && options.some((option) => option === value);
 }
 
-function isInjuryList(value: unknown): value is Injury[] {
-  return Array.isArray(value) && value.every((entry) => isOption(INJURIES, entry));
+function isOptionList<T extends string>(options: readonly T[], value: unknown): value is T[] {
+  return Array.isArray(value) && value.every((entry) => isOption(options, entry));
+}
+
+/** Goals are the one list that must hold something, and hold each entry once. */
+function isGoalList(value: unknown): value is Goal[] {
+  return isOptionList(GOALS, value) && value.length > 0 && new Set(value).size === value.length;
 }
 
 /** Shallow: every field present, every union member known. Ranges belong to the route that accepts the profile. */
@@ -71,15 +75,14 @@ export function isProfile(value: unknown): value is Profile {
     Number.isFinite(candidate.age) &&
     Number.isFinite(candidate.heightCm) &&
     Number.isFinite(candidate.bodyweightKg) &&
-    isOption(GOALS, candidate.primaryGoal) &&
-    (candidate.secondaryGoal === null || isOption(GOALS, candidate.secondaryGoal)) &&
+    isGoalList(candidate.goals) &&
     Number.isFinite(candidate.daysPerWeek) &&
     Number.isFinite(candidate.sessionMinutes) &&
     isOption(YEARS_TRAINING, candidate.yearsTraining) &&
     isOption(EQUIPMENT, candidate.equipment) &&
     isOption(TRAINING_STYLES, candidate.trainingStyle) &&
     isOption(CARDIO, candidate.cardio) &&
-    isInjuryList(candidate.injuries) &&
+    isOptionList(INJURIES, candidate.injuries) &&
     typeof candidate.notes === 'string'
   );
 }

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { CREATE_PROGRAM_TOOL, PLAN_OUTPUT_SCHEMA, VERDICT_OUTPUT_SCHEMA } from './prompt.js';
 import { CARDIO, EQUIPMENT, GOALS, INJURIES, SEXES, TRAINING_STYLES, YEARS_TRAINING, type Profile } from './state.js';
 
-const RANGE_KEYWORDS = ['minimum', 'maximum', 'maxItems'];
+const RANGE_KEYWORDS = ['minimum', 'maximum', 'maxItems', 'minItems'];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -26,8 +26,7 @@ const profile: Profile = {
   age: 34,
   heightCm: 180,
   bodyweightKg: 82,
-  primaryGoal: 'muscle',
-  secondaryGoal: 'strength',
+  goals: ['muscle', 'strength'],
   daysPerWeek: 4,
   sessionMinutes: 60,
   yearsTraining: '3-5',
@@ -40,7 +39,6 @@ const profile: Profile = {
 
 const ENUM_FIELDS: [string, readonly string[]][] = [
   ['sex', SEXES],
-  ['primaryGoal', GOALS],
   ['yearsTraining', YEARS_TRAINING],
   ['equipment', EQUIPMENT],
   ['trainingStyle', TRAINING_STYLES],
@@ -88,8 +86,14 @@ describe('CREATE_PROGRAM_TOOL', () => {
     expect(profileProperty('injuries').items).toEqual({ type: 'string', enum: [...INJURIES] });
   });
 
-  it('should let the secondary goal be null as well as any goal', () => {
-    expect(profileProperty('secondaryGoal').anyOf).toEqual([{ type: 'string', enum: [...GOALS] }, { type: 'null' }]);
+  it('should enumerate every goal option on the array items', () => {
+    expect(profileProperty('goals').items).toEqual({ type: 'string', enum: [...GOALS] });
+  });
+
+  it('should use no range keywords the messages API rejects', () => {
+    const keys = everyKey(CREATE_PROGRAM_TOOL.input_schema);
+
+    expect(RANGE_KEYWORDS.filter((keyword) => keys.includes(keyword))).toEqual([]);
   });
 });
 

@@ -6,7 +6,7 @@ const REASON = 'intake answered';
 
 const PROFILE: Profile = {
   sex: 'female', age: 29, heightCm: 168, bodyweightKg: 63,
-  primaryGoal: 'muscle', secondaryGoal: 'longevity',
+  goals: ['muscle', 'longevity'],
   daysPerWeek: 4, sessionMinutes: 45, yearsTraining: '1-3',
   equipment: 'home_gym', trainingStyle: 'bodybuilding', cardio: 'zone2',
   injuries: ['shoulder'], notes: 'right shoulder aches on overhead work',
@@ -29,10 +29,18 @@ describe('programInput', () => {
     expect(programInput(called(PROFILE))).toEqual({ profile: PROFILE, reason: REASON });
   });
 
-  it('should accept a profile with no secondary goal', () => {
-    const profile = { ...PROFILE, secondaryGoal: null };
+  it('should accept a profile with a single goal', () => {
+    const profile = { ...PROFILE, goals: ['muscle'] };
 
     expect(programInput(called(profile))).toEqual({ profile, reason: REASON });
+  });
+
+  it('should reject a profile with no goals', () => {
+    expect(programInput(called({ ...PROFILE, goals: [] }))).toBeNull();
+  });
+
+  it('should reject a goal chosen twice', () => {
+    expect(programInput(called({ ...PROFILE, goals: ['muscle', 'muscle'] }))).toBeNull();
   });
 
   it('should accept a profile with no injuries', () => {
@@ -42,7 +50,7 @@ describe('programInput', () => {
   });
 
   it('should reject a goal that is not one of the options', () => {
-    expect(programInput(called({ ...PROFILE, primaryGoal: 'powerlifting' }))).toBeNull();
+    expect(programInput(called({ ...PROFILE, goals: ['powerlifting'] }))).toBeNull();
   });
 
   it('should reject an equipment value that is not one of the options', () => {

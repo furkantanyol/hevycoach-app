@@ -22,7 +22,6 @@ export const SEX_LABELS: Readonly<Record<Profile['sex'], string>> = {
 export const GOAL_LABELS: Readonly<Record<Goal, string>> = {
   muscle: 'Muscle',
   strength: 'Strength',
-  both: 'Muscle and strength',
   fat_loss: 'Fat loss',
   longevity: 'Longevity',
   athletic: 'Athletic performance',
@@ -71,8 +70,7 @@ export const FIELD_LABELS: Readonly<Record<keyof Profile, string>> = {
   age: 'Age',
   heightCm: 'Height',
   bodyweightKg: 'Bodyweight',
-  primaryGoal: 'Primary goal',
-  secondaryGoal: 'Secondary goal',
+  goals: 'Goals',
   daysPerWeek: 'Days per week',
   sessionMinutes: 'Session length',
   yearsTraining: 'Training age',
@@ -109,9 +107,7 @@ const FIELD_VALUES: Readonly<Record<keyof Profile, FieldValue>> = {
   age: (profile) => String(profile.age),
   heightCm: (profile) => `${decimal(profile.heightCm)} cm`,
   bodyweightKg: (profile) => `${decimal(profile.bodyweightKg)} kg`,
-  primaryGoal: (profile) => GOAL_LABELS[profile.primaryGoal],
-  secondaryGoal: (profile) =>
-    profile.secondaryGoal ? GOAL_LABELS[profile.secondaryGoal] : NONE,
+  goals: (profile) => profile.goals.map((goal) => GOAL_LABELS[goal]).join(', '),
   daysPerWeek: (profile) => String(profile.daysPerWeek),
   sessionMinutes: (profile) => `${profile.sessionMinutes} min`,
   yearsTraining: (profile) => YEARS_TRAINING_LABELS[profile.yearsTraining],

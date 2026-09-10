@@ -13,19 +13,12 @@ import {
   TRAINING_STYLE_OPTIONS,
   YEARS_TRAINING_OPTIONS,
 } from '../../lib/options';
-import type { Goal, Injury } from '../../lib/types';
 import { MultiPills, NotesField, NumberField, OptionPills, Question, type Choice } from './fields';
 
-const NONE_LABEL = 'None';
 const MINUTES_SUFFIX = ' min';
 /** Hevy's own session lengths, inside the server's 20-180 bounds. */
 const SESSION_MINUTES = [30, 45, 60, 75, 90, 120];
 const MAX_DAYS_PER_WEEK = 7;
-
-const SECONDARY_GOAL_OPTIONS: readonly Choice<Goal | null>[] = [
-  { value: null, label: NONE_LABEL },
-  ...GOAL_OPTIONS,
-];
 
 const DAY_OPTIONS: readonly Choice<number>[] = Array.from(
   { length: MAX_DAYS_PER_WEEK },
@@ -41,10 +34,9 @@ function minuteOptions(current: number | null): readonly Choice<number>[] {
   return values.map((value) => ({ value, label: `${value}${MINUTES_SUFFIX}` }));
 }
 
-function toggled(injuries: readonly Injury[], injury: Injury): Injury[] {
-  return injuries.includes(injury)
-    ? injuries.filter((current) => current !== injury)
-    : [...injuries, injury];
+/** Multi-select: tapping a chosen pill drops it, tapping any other adds it to the end. */
+function toggled<T>(values: readonly T[], value: T): T[] {
+  return values.includes(value) ? values.filter((current) => current !== value) : [...values, value];
 }
 
 function AboutYou() {
@@ -75,22 +67,13 @@ function AboutYou() {
 function Goals() {
   const draft = useDraft();
   return (
-    <>
-      <Question field="primaryGoal">
-        <OptionPills
-          options={GOAL_OPTIONS}
-          value={draft.primaryGoal}
-          onSelect={(primaryGoal) => updateDraft({ primaryGoal })}
-        />
-      </Question>
-      <Question field="secondaryGoal">
-        <OptionPills
-          options={SECONDARY_GOAL_OPTIONS}
-          value={draft.secondaryGoal}
-          onSelect={(secondaryGoal) => updateDraft({ secondaryGoal })}
-        />
-      </Question>
-    </>
+    <Question field="goals">
+      <MultiPills
+        options={GOAL_OPTIONS}
+        values={draft.goals}
+        onToggle={(goal) => updateDraft({ goals: toggled(draft.goals, goal) })}
+      />
+    </Question>
   );
 }
 

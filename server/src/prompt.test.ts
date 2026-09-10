@@ -7,8 +7,7 @@ const profile: Profile = {
   age: 34,
   heightCm: 180,
   bodyweightKg: 82,
-  primaryGoal: 'muscle',
-  secondaryGoal: 'strength',
+  goals: ['muscle', 'strength'],
   daysPerWeek: 4,
   sessionMinutes: 60,
   yearsTraining: '3-5',
@@ -46,7 +45,7 @@ const block: Block = {
 
 const PROFILE_LINES = [
   'Sex: male · Age: 34 · Height: 180 cm · Bodyweight: 82 kg',
-  'Primary goal: muscle · Secondary goal: strength',
+  'Goals: muscle, strength',
   'Days per week: 4 · Session length: 60 min · Years training: 3-5',
   'Equipment: full_gym · Training style: hybrid · Cardio: zone2',
   'Injuries: knee, shoulder',
@@ -103,10 +102,10 @@ describe('contextBlock', () => {
     expect(text).toContain(PROFILE_LINES);
   });
 
-  it('should say none when there is no secondary goal', () => {
-    const text = contextBlock(stateWith({ profile: { ...profile, secondaryGoal: null } }));
+  it('should render a lone goal on the goals line', () => {
+    const text = contextBlock(stateWith({ profile: { ...profile, goals: ['longevity'] } }));
 
-    expect(text).toContain('Secondary goal: none');
+    expect(text).toContain('Goals: longevity');
   });
 
   it('should say none when there are no injuries', () => {

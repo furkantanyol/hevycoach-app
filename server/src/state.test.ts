@@ -11,8 +11,7 @@ const PROFILE: Profile = {
   age: 34,
   heightCm: 180,
   bodyweightKg: 82,
-  primaryGoal: 'muscle',
-  secondaryGoal: 'strength',
+  goals: ['muscle', 'strength'],
   daysPerWeek: 4,
   sessionMinutes: 60,
   yearsTraining: '3-5',
@@ -31,6 +30,24 @@ const OLD_PROFILE = {
   equipment: 'full commercial gym',
   constraints: 'left knee, Hoffa fat pad',
   notes: 'travels one week a month',
+};
+
+/** The profile shape saved while goals were a primary and a secondary field. */
+const TWO_GOAL_PROFILE = {
+  sex: 'male',
+  age: 34,
+  heightCm: 180,
+  bodyweightKg: 82,
+  primaryGoal: 'muscle',
+  secondaryGoal: 'strength',
+  daysPerWeek: 4,
+  sessionMinutes: 60,
+  yearsTraining: '3-5',
+  equipment: 'full_gym',
+  trainingStyle: 'hybrid',
+  cardio: 'zone2',
+  injuries: ['knee'],
+  notes: 'left knee, Hoffa fat pad',
 };
 
 describe('state', () => {
@@ -89,6 +106,12 @@ describe('state', () => {
     await writeOnDisk({ ...emptyState(), profile: OLD_PROFILE, memory: MEMORY });
 
     await expect(loadState(path)).resolves.toMatchObject({ memory: MEMORY });
+  });
+
+  it('should discard a profile saved with a primary and a secondary goal', async () => {
+    await writeOnDisk({ ...emptyState(), profile: TWO_GOAL_PROFILE });
+
+    await expect(loadState(path)).resolves.toEqual(emptyState());
   });
 
   it('should discard a profile whose enum value is no longer an option', async () => {
