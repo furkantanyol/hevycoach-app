@@ -134,11 +134,11 @@ The owner reversed "one surface" after seeing the thread alone: the app gets fou
 ### Profile
 
 ```ts
-type Goal = 'muscle' | 'strength' | 'both' | 'fat_loss' | 'longevity' | 'athletic';
+type Goal = 'muscle' | 'strength' | 'fat_loss' | 'longevity' | 'athletic';   // 2026-09-10 17:40: one multi-select, at least one
 type Injury = 'knee' | 'shoulder' | 'lower_back' | 'elbow_wrist' | 'hip' | 'other';
 interface Profile {
-  sex: 'male' | 'female' | 'other'; age: number; heightCm: number; bodyweightKg: number;
-  primaryGoal: Goal; secondaryGoal: Goal | null;
+  sex: 'male' | 'female' | 'other'; age: number; heightCm: number | null; bodyweightKg: number;   // 17:45: height no longer asked
+  goals: Goal[];
   daysPerWeek: number; sessionMinutes: number; yearsTraining: '<1' | '1-3' | '3-5' | '5+';
   equipment: 'full_gym' | 'home_gym' | 'dumbbells' | 'bodyweight';
   trainingStyle: 'powerlifting' | 'bodybuilding' | 'hybrid' | 'athletic';
@@ -162,6 +162,6 @@ The plan is still built through the chat: after PUT /profile the app POSTs "Buil
 ### App
 
 - Tabs (expo-router `(tabs)`): Coach (the thread), Plan, Progress, Profile. Onboarding is a stack shown instead of the tabs while GET /profile is null, and re-enterable from Profile.
-- Onboarding steps: 1 About you (sex, age, height); 2 Goals (primary, secondary); 3 Training (days per week, session length, years training; prefilled); 4 Equipment and style (equipment prefilled, training style, cardio); 5 Body and limits (bodyweight prefilled, injuries multi-select, details); 6 Review and build (summary, PUT /profile, then the streamed "Build my block." reply, then into the tabs).
+- Onboarding (17:45, reduced after the owner found six steps overwhelming): Welcome; 1 About you (sex, age); 2 Goals and schedule (goals multi-select, days per week and bodyweight prefilled); 3 Anything to work around (injuries, optional notes); 4 Review and build (PUT /profile, streamed "Build my block.", then the Plan tab). Session length, years training and equipment are prefilled silently and editable in Profile; training style defaults to hybrid and cardio to none. Design: `docs/design-brief.md`.
 - Data: one small hook `useServer<T>(path)` (fetch with the bearer header, loading and error state, refetch on tab focus and on foreground). No query library.
 - Visual direction: the thread's surface brief (Hevy palette, system fonts, cards with hairline borders, one accent). Screens ship consistent with `src/components/assistant-ui/theme.ts` tokens; impeccable polishes.
