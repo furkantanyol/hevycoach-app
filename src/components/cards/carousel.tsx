@@ -1,9 +1,14 @@
 /**
- * The top third: three glass cards on a pager over an accent wash, with dots
- * under them. One GET /cards feeds all three, so a card that has no data yet
- * shows its own skeleton and the failure is reported once, in the first card.
+ * The top third: three glass cards on a pager, with dots under them. One GET
+ * /cards feeds all three, so a card that has no data yet shows its own skeleton
+ * and the failure is reported once, in the first card.
+ *
+ * Nothing here paints a ground. The accent wash belongs to the whole screen now
+ * (src/app/index.tsx), so the region and the dots row stay transparent and the
+ * cards sit straight on it with no edge where the carousel ends. That suits
+ * `GlassView`, which samples whatever is behind it: an opaque parent would give
+ * it a flat colour to refract instead of the wash.
  */
-import { LinearGradient } from 'expo-linear-gradient';
 import { useState } from 'react';
 import { StyleSheet, View, type NativeSyntheticEvent } from 'react-native';
 import PagerView, { type PagerViewOnPageSelectedEventData } from 'react-native-pager-view';
@@ -18,17 +23,9 @@ import type { CardsView } from '../../lib/types';
 
 /** Keys for the three pages, so the dots and the pager cannot drift apart. */
 const PAGES = ['volume', 'lastWorkout', 'nextSession'] as const;
-/** The accent wash at the top of the region, per the amendment. */
-const WASH_ALPHA = 0.12;
 const DOT_SIZE = 6;
 const DOT_ACTIVE_WIDTH = 16;
 const PAGE_PADDING_VERTICAL = 12;
-
-/** A hex token as a translucent colour: RN needs the alpha baked into the string. */
-function wash(hex: string, alpha: number): string {
-  const value = Number.parseInt(hex.slice(1), 16);
-  return `rgba(${(value >> 16) & 255}, ${(value >> 8) & 255}, ${value & 255}, ${alpha})`;
-}
 
 /** Decorative: the pager itself is what VoiceOver swipes through. */
 function Dots({ active }: { readonly active: number }) {
@@ -56,7 +53,6 @@ function Dots({ active }: { readonly active: number }) {
 }
 
 export function Carousel() {
-  const { colors } = useTheme();
   const { data, error } = useServer<CardsView>('/cards');
   const [active, setActive] = useState(0);
 
@@ -65,12 +61,7 @@ export function Carousel() {
   };
 
   return (
-    <LinearGradient
-      colors={[wash(colors.accent, WASH_ALPHA), colors.background]}
-      start={{ x: 0.5, y: 0 }}
-      end={{ x: 0.5, y: 1 }}
-      style={styles.region}
-    >
+    <View style={styles.region}>
       <PagerView style={styles.pager} initialPage={0} onPageSelected={select}>
         <View key={PAGES[0]} style={styles.page}>
           <GlassCard>
@@ -89,13 +80,14 @@ export function Carousel() {
         </View>
       </PagerView>
       <Dots active={active} />
-    </LinearGradient>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   region: {
     flex: 1,
+    backgroundColor: 'transparent',
   },
   pager: {
     flex: 1,
@@ -111,6 +103,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: DOT_SIZE,
     paddingBottom: 8,
+    backgroundColor: 'transparent',
   },
   dot: {
     height: DOT_SIZE,

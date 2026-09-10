@@ -46,6 +46,11 @@ const AT_BOTTOM_SLACK = 24;
  *
  * `keyboardShouldPersistTaps="handled"` is what lets the first tap on a pill or
  * on the number field's Send button count: without it the open keyboard eats it.
+ *
+ * Nothing in here paints a ground. The screen's wash is still fading out where
+ * the thread begins (src/app/index.tsx), so the list and the view holding it
+ * stay transparent and the tail of it shows behind the first bubbles; the
+ * bubbles, the pills and the composer keep their own fills.
  */
 export function Thread() {
   const list = useRef<FlatList<ThreadMessage>>(null);
@@ -93,6 +98,7 @@ export function Thread() {
 const styles = StyleSheet.create({
   flex: {
     flex: 1,
+    backgroundColor: 'transparent',
   },
   composer: {
     paddingBottom: COMPOSER_BOTTOM_GAP,

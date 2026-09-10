@@ -5,8 +5,17 @@
  * src/lib/reload.ts and the thread remounts on the new key with the server's
  * history.
  *
- * The header is left at its iOS defaults: on iOS 26 that is Liquid Glass with
- * no configuration, and the screen's own chrome would only fight it.
+ * The header is transparent (`headerTransparent`, expo-router's
+ * NativeStackNavigationOptions): it hands the native bar a transparent
+ * background and an absolute position, so the screen's wash runs behind the
+ * title unbroken instead of stopping at a white band. `headerBlurEffect` is
+ * deliberately left unset — it would paint a material back over the wash, the
+ * band this removes, and react-native-screens warns it can also overlap iOS 26
+ * scroll edge effects. The transparent bar drops its own hairline with it
+ * (`headerShadowVisible` defaults to hidden once the header is transparent).
+ *
+ * Because the bar now floats, the screen is laid out from the top of the
+ * display and insets itself by the bar's height (src/app/index.tsx).
  */
 import * as Notifications from 'expo-notifications';
 import { Stack } from 'expo-router';
@@ -48,7 +57,14 @@ export default function RootLayout() {
 
   return (
     <Stack>
-      <Stack.Screen name="index" options={{ title: SCREEN_TITLE, headerLargeTitleEnabled: false }} />
+      <Stack.Screen
+        name="index"
+        options={{
+          title: SCREEN_TITLE,
+          headerLargeTitleEnabled: false,
+          headerTransparent: true,
+        }}
+      />
     </Stack>
   );
 }
