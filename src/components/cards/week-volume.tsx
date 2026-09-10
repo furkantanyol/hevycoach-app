@@ -2,10 +2,10 @@
  * Card one: the week's total volume, the session count, and the seven days as
  * bars — Hevy's own widget, read from GET /cards.
  *
- * The bars are Swift Charts inside a SwiftUI `Host`. That host is the only
- * place in the app allowed to hold SwiftUI (never a chat bubble). `Chart` and
- * `Host` are iOS 16+, so the only gate is `NATIVE_CHART`, the deliberate
- * switch back to plain Views.
+ * Swift Charts inside a SwiftUI `Host` was the intended renderer — that host
+ * is the only place in the app allowed to hold SwiftUI, never a chat bubble —
+ * but `NATIVE_CHART` is off, so the plain Views draw the bars. The gate is the
+ * only difference between the two.
  */
 import { Chart, Host } from '@expo/ui/swift-ui';
 import { StyleSheet, Text, View } from 'react-native';
@@ -15,8 +15,8 @@ import { CardCaption, CardLabel, SKELETON } from './card-text';
 import { useTheme } from '../assistant-ui/theme';
 import type { CardsView } from '../../lib/types';
 
-/** Swift Charts is the intended renderer; flip to false to ship the plain-View bars. */
-const NATIVE_CHART = true;
+/** Off: Chart hides no axes (only showGrid/showLegend), so the plain bars match Hevy's widget. */
+const NATIVE_CHART = false;
 const LABEL = 'Volume';
 const CHART_LABEL = 'Volume by day this week';
 /** The one grey line the carousel shows when GET /cards failed. */

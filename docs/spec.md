@@ -178,7 +178,7 @@ One route, `src/app/index.tsx`: large title "Coach", a grey strip from `GET /wee
 
 ```ts
 interface Choice { label: string; value: string }
-interface Message { id; role; text; createdAt; kind?: 'plan' | 'review'; choices?: Choice[]; multi?: boolean }
+interface Message { id; role; text; createdAt; kind?: 'plan' | 'review'; choices?: Choice[]; input?: { kind: 'bodyweight'; unit: 'kg' } }   // `multi` removed 21:00: multi-answer questions loop instead
 ```
 The app renders `choices` as pills under the last assistant message when no user message follows it. Single: tapping sends `{ text: label, choice: value }`. Multi: pills toggle, a "Done" pill sends `{ text: labels joined by ", ", choice: values[] }`. Typing is always allowed. `POST /messages` body is `{ text: string; choice?: string | string[] }`.
 

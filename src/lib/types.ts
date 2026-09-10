@@ -19,7 +19,6 @@ export interface Message {
   readonly createdAt: string;
   readonly kind?: 'plan' | 'review';
   readonly choices?: readonly Choice[];
-  readonly multi?: boolean;
   readonly input?: { readonly kind: 'bodyweight'; readonly unit: 'kg' };
 }
 

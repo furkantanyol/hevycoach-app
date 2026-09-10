@@ -21,23 +21,17 @@ import type { Message } from './lib/types';
 const ERROR_PREFIX = 'Coach unavailable: ';
 const MESSAGES_PATH = '/messages';
 
-/** The `choice` half of POST /messages: one value, or a multi-select's values. */
-export type ChoiceValue = string | readonly string[];
-
 interface UserTurn {
   readonly text: string;
-  readonly choice: ChoiceValue | null;
+  readonly choice: string | null;
 }
 
 /** Every call to the coach server: base URL + bearer token. Lives in lib/server. */
 export { serverFetch as coachFetch } from './lib/server';
 
-function readChoice(value: unknown): ChoiceValue | null {
-  if (typeof value === 'string') return value;
-  if (Array.isArray(value) && value.every((entry) => typeof entry === 'string')) {
-    return value as readonly string[];
-  }
-  return null;
+/** The `choice` half of POST /messages: one tapped pill, so one value. */
+function readChoice(value: unknown): string | null {
+  return typeof value === 'string' ? value : null;
 }
 
 function lastUserTurn(messages: readonly ThreadMessage[]): UserTurn {
@@ -52,12 +46,11 @@ function lastUserTurn(messages: readonly ThreadMessage[]): UserTurn {
   };
 }
 
-/** `kind`, `choices`, `multi` and `input` are what the message renderer reads back. */
+/** `kind`, `choices` and `input` are what the message renderer reads back. */
 function customOf(message: Message): Record<string, unknown> {
   return {
     ...(message.kind !== undefined && { kind: message.kind }),
     ...(message.choices !== undefined && { choices: message.choices }),
-    ...(message.multi !== undefined && { multi: message.multi }),
     ...(message.input !== undefined && { input: message.input }),
   };
 }

@@ -1,7 +1,7 @@
 /**
  * What the coach attaches to a message that changes how it reads: a review's
  * caption above the text. The wire shape is `metadata.custom = { kind,
- * choices, multi }` — see docs/spec.md and `toMessageLike` in
+ * choices }` — see docs/spec.md and `toMessageLike` in
  * src/coach-adapter.ts. A plan is prose, including the last line that names
  * the routines, so it needs nothing here.
  */

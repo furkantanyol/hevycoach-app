@@ -10,12 +10,16 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Composer } from './composer';
 import { MessageBubble } from './message';
 import { Spacing } from './theme';
 
+/**
+ * Air under the composer and nothing else: the bottom safe-area inset comes
+ * from the screen's `SafeAreaView` (src/app/index.tsx), so adding it again here
+ * floated the composer a home indicator above the edge.
+ */
 const COMPOSER_BOTTOM_GAP = 8;
 /** This far from the end still counts as the bottom, so the thread keeps following new messages. */
 const AT_BOTTOM_SLACK = 24;
@@ -44,7 +48,6 @@ const AT_BOTTOM_SLACK = 24;
  * on the number field's Send button count: without it the open keyboard eats it.
  */
 export function Thread() {
-  const insets = useSafeAreaInsets();
   const list = useRef<FlatList<ThreadMessage>>(null);
   const viewportHeight = useRef(0);
   const atBottom = useRef(true);
@@ -80,7 +83,7 @@ export function Thread() {
       >
         {() => <MessageBubble />}
       </ThreadPrimitive.MessagesFlatList>
-      <View style={{ paddingBottom: insets.bottom + COMPOSER_BOTTOM_GAP }}>
+      <View style={styles.composer}>
         <Composer />
       </View>
     </KeyboardAvoidingView>
@@ -90,6 +93,9 @@ export function Thread() {
 const styles = StyleSheet.create({
   flex: {
     flex: 1,
+  },
+  composer: {
+    paddingBottom: COMPOSER_BOTTOM_GAP,
   },
   messageList: {
     width: '100%',
