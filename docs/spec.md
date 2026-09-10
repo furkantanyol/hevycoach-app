@@ -126,3 +126,42 @@ Single user; secrets in `.env`; one static bearer token in the app bundle; webho
 ## Out of scope for v1
 
 Multi-user, accounts, encrypted key storage, rate limits, Apple Health, offline mirror, daily scheduled pushes, Android, web.
+
+## Amendment 2026-09-10 16:30: four tabs and structured onboarding
+
+The owner reversed "one surface" after seeing the thread alone: the app gets four tabs and a native onboarding flow. The server stays the only place with state.
+
+### Profile
+
+```ts
+type Goal = 'muscle' | 'strength' | 'both' | 'fat_loss' | 'longevity' | 'athletic';
+type Injury = 'knee' | 'shoulder' | 'lower_back' | 'elbow_wrist' | 'hip' | 'other';
+interface Profile {
+  sex: 'male' | 'female' | 'other'; age: number; heightCm: number; bodyweightKg: number;
+  primaryGoal: Goal; secondaryGoal: Goal | null;
+  daysPerWeek: number; sessionMinutes: number; yearsTraining: '<1' | '1-3' | '3-5' | '5+';
+  equipment: 'full_gym' | 'home_gym' | 'dumbbells' | 'bodyweight';
+  trainingStyle: 'powerlifting' | 'bodybuilding' | 'hybrid' | 'athletic';
+  cardio: 'none' | 'zone2' | 'hiit' | 'both';
+  injuries: Injury[]; notes: string;   // notes: free text for injury details and anything else, untrusted
+}
+```
+
+### New routes (bearer-protected)
+
+| Route | Response |
+|---|---|
+| GET /prefill | `{ bodyweightKg, daysPerWeek, sessionMinutes, yearsTraining, equipment, workouts, firstWorkout }`, each null when Hevy has no evidence: bodyweight from the latest body measurement; days per week = sessions per week over the last 8 weeks, rounded; session minutes = median duration of the last 20 workouts rounded to 15; years training from the first workout date; equipment guessed from the used templates' equipment (barbell or machine or cable → full_gym, dumbbell only → dumbbells, none → bodyweight) |
+| GET /profile | `{ profile: Profile \| null }` |
+| PUT /profile | body `Profile`, validated field by field (400 with the field name on failure); saves; `{ profile }` |
+| GET /block | `{ block, nextSessionIndex, completions }` where `completions` maps session index → `{ completedAt, verdict }` from the last 30 Hevy workouts matched by routine id, verdict text from the thread's verdict messages matched by session name; `nextSessionIndex` = the session after the most recently completed one in block order, 0 when none, null when there is no block |
+| GET /progress | `{ workouts, firstWorkout, lastWorkout, thisWeek, lifts }`, lifts = the history summary's exercises, top 15 by sessions, each `{ templateId, title, sessions, lastPerformed, bestWeightKg, bestReps, e1rmTrend, weeklyFrequency }`; the summary is cached in memory for 10 minutes |
+
+The plan is still built through the chat: after PUT /profile the app POSTs "Build my block." to /messages and shows the streamed reply; `create_program({ profile, reason })` keeps the full profile as strict tool input so chat re-plans can change it. `contextBlock` renders every profile field.
+
+### App
+
+- Tabs (expo-router `(tabs)`): Coach (the thread), Plan, Progress, Profile. Onboarding is a stack shown instead of the tabs while GET /profile is null, and re-enterable from Profile.
+- Onboarding steps: 1 About you (sex, age, height); 2 Goals (primary, secondary); 3 Training (days per week, session length, years training; prefilled); 4 Equipment and style (equipment prefilled, training style, cardio); 5 Body and limits (bodyweight prefilled, injuries multi-select, details); 6 Review and build (summary, PUT /profile, then the streamed "Build my block." reply, then into the tabs).
+- Data: one small hook `useServer<T>(path)` (fetch with the bearer header, loading and error state, refetch on tab focus and on foreground). No query library.
+- Visual direction: the thread's surface brief (Hevy palette, system fonts, cards with hairline borders, one accent). Screens ship consistent with `src/components/assistant-ui/theme.ts` tokens; impeccable polishes.
