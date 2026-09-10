@@ -26,3 +26,9 @@ UX rules applied from ui-ux-pro-max (the engine's automatic palette and font pic
 - **Progress**: three stat tiles in a row (workouts, this week, since year); lift rows with the title, best set, and the trend as "105 → 105 → 105" with an arrow glyph tinted only when up.
 - **Profile**: grouped rows (label left, value right, chevron), one group per step plus "Details" (session length, years training, equipment, training style, cardio); tapping a row opens a picker screen with the same pills; "Rebuild block" as the primary action at the bottom.
 - **Tab bar**: labels only for now (no icon package installed); active label in accent.
+
+## Additions from the 17:47 simulator pass
+
+- Progress: a lift with no logged weight (bodyweight work, e1RM trend all zeros) shows its rep record as the best ("40 reps") and a dash instead of the trend; never "0 · 0 · 0".
+- Tab bar: no placeholder glyphs (the "▼" triangles go); labels only until an icon set is chosen.
+- Trend arrows: "→" for flat, "↑" tinted accent only when the last value is above the first, "↓" in secondary.
