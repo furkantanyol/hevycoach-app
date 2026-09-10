@@ -1,5 +1,5 @@
 import type { CoachDeps } from './coach.js';
-import { checkBlock, type Violation } from './guard.js';
+import { applyFixes, checkBlock, type Violation } from './guard.js';
 import { formatCatalogue, formatHistory, type HistorySummary, historySummary, type TemplateOption, templateCatalogue, writeRoutines } from './hevy.js';
 import { planTask } from './prompt.js';
 import { planRequest, textOf } from './requests.js';
@@ -7,6 +7,7 @@ import { isProfile, type Block, type Exercise, type Profile } from './state.js';
 
 const GUARD_RETRY = 'The guard rejected that block. Fix every violation below and return the whole block again.';
 const GUARD_FAILED = 'The plan broke the guard twice and was not written:';
+const GUARD_ADJUSTED = '**Guard adjustments**';
 const EMPTY_BLOCK = 'plan attempt returned an empty block';
 /** Enough of the analysis to see what the model was trying to say instead of planning. */
 const ANALYSIS_LOG_MAX = 300;
@@ -77,15 +78,33 @@ async function attempt(run: PlanRun, task: string): Promise<Attempt> {
   return { analysis: plan.analysis, block, violations: checkBlock(block, run.summary, run.catalogue) };
 }
 
+function guardFailed(violations: Violation[]): Error {
+  return new Error(`${GUARD_FAILED}\n${violationLines(violations)}`);
+}
+
+/** The athlete reads what the guard changed, in the plan they were already going to read. */
+function withAdjustments(analysis: string, notes: string[]): string {
+  return [analysis, [GUARD_ADJUSTED, ...notes.map((note) => `- ${note}`)].join('\n')].join('\n\n');
+}
+
+/** One retry is the model's chance to fix its own numbers; after that the guard bounds them itself rather than leave the athlete with nothing. */
+function clamped(run: PlanRun, rejected: Attempt): Attempt {
+  if (rejected.violations.some((violation) => violation.fix === undefined)) throw guardFailed(rejected.violations);
+
+  const { block, notes } = applyFixes(rejected.block, rejected.violations);
+  const violations = checkBlock(block, run.summary, run.catalogue);
+  if (violations.length > 0) throw guardFailed(violations);
+
+  return { analysis: withAdjustments(rejected.analysis, notes), block, violations };
+}
+
 async function approvedPlan(run: PlanRun, task: string): Promise<Attempt> {
   const first = await attempt(run, task);
   if (first.violations.length === 0) return first;
 
   const second = await attempt(run, `${task}\n\n${GUARD_RETRY}\n${violationLines(first.violations)}`);
-  if (second.violations.length > 0) {
-    throw new Error(`${GUARD_FAILED}\n${violationLines(second.violations)}`);
-  }
-  return second;
+  if (second.violations.length === 0) return second;
+  return clamped(run, second);
 }
 
 function blockSummary(block: Block): string {

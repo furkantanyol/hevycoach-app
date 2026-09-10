@@ -26,6 +26,8 @@ const EMPTY_ANALYSIS = 'Before I write this I need to know which days of the wee
 const EMPTY_BLOCK_LOG = `plan attempt returned an empty block (sessions: 0, exercises: 0): ${EMPTY_ANALYSIS}`;
 const SESSION_A = 'Lower A';
 const SESSION_B = 'Lower B';
+/** What the guard writes into the analysis once it stops asking the model and bounds the load itself. */
+const ADJUSTMENT = `${TEMPLATE_TITLE} in ${SESSION_A}: weight capped at ${CAP_KG} kg (planned ${OVER_CAP_KG} kg)`;
 
 const PROFILE: Profile = {
   goals: ['strength', 'muscle'],
@@ -161,7 +163,7 @@ function harness(planTexts: string[]) {
   return { deps, state, sent: anthropic.sent, written, logs };
 }
 
-const routinePost = (title: string): Call => ({
+const routinePost = (title: string, weightKg = APPROVED_KG): Call => ({
   method: 'POST',
   path: '/v1/routines',
   body: {
@@ -172,7 +174,7 @@ const routinePost = (title: string): Call => ({
         {
           exercise_template_id: TEMPLATE_ID,
           notes: 'RPE 8. Brace before you unrack.',
-          sets: Array.from({ length: SETS }, () => ({ type: 'normal', weight_kg: APPROVED_KG, reps: REPS })),
+          sets: Array.from({ length: SETS }, () => ({ type: 'normal', weight_kg: weightKg, reps: REPS })),
         },
       ],
     },
@@ -248,16 +250,34 @@ describe('createProgram', () => {
     expect(result).toBe(`${ANALYSIS}\n\nWritten to Hevy: Autumn block, 2 sessions — ${SESSION_A}, ${SESSION_B}.`);
   });
 
-  it('should throw when the second block still breaks the guard', async () => {
+  it('should clamp the load and write the block when the retry still breaks the guard', async () => {
+    const { deps, written } = harness([planJson(OVER_CAP_KG), planJson(OVER_CAP_KG)]);
+
+    await createProgram(deps, { profile: PROFILE, reason: 'intake' });
+
+    expect(written()).toEqual([routinePost(SESSION_A, CAP_KG), routinePost(SESSION_B)]);
+  });
+
+  it('should close the analysis with what the guard adjusted', async () => {
     const { deps } = harness([planJson(OVER_CAP_KG), planJson(OVER_CAP_KG)]);
+
+    const result = await createProgram(deps, { profile: PROFILE, reason: 'intake' });
+
+    expect(result).toBe(
+      `${ANALYSIS}\n\n**Guard adjustments**\n- ${ADJUSTMENT}\n\nWritten to Hevy: Autumn block, 2 sessions — ${SESSION_A}, ${SESSION_B}.`,
+    );
+  });
+
+  it('should throw when the second block breaks a rule no fix can bound', async () => {
+    const { deps } = harness([EMPTY_PLAN_JSON, EMPTY_PLAN_JSON]);
 
     await expect(createProgram(deps, { profile: PROFILE, reason: 'intake' })).rejects.toThrow(
       /broke the guard twice/,
     );
   });
 
-  it('should write nothing to Hevy when the guard rejects twice', async () => {
-    const { deps, written } = harness([planJson(OVER_CAP_KG), planJson(OVER_CAP_KG)]);
+  it('should write nothing to Hevy when the guard rejects a shape it cannot fix', async () => {
+    const { deps, written } = harness([EMPTY_PLAN_JSON, EMPTY_PLAN_JSON]);
 
     await expect(createProgram(deps, { profile: PROFILE, reason: 'intake' })).rejects.toThrow();
 
