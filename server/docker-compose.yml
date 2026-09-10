@@ -1,0 +1,17 @@
+services:
+  server:
+    build:
+      context: ..
+      dockerfile: server/Dockerfile
+    env_file: .env
+    volumes:
+      - ./data:/app/server/data
+    restart: unless-stopped
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    command: tunnel run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    restart: unless-stopped
+    network_mode: "service:server"
+    depends_on:
+      - server
