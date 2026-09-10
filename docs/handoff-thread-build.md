@@ -28,3 +28,7 @@ Dependency list, request shapes, `EXPO_PUBLIC_*` names, anything under `server/`
 ## Update 2026-09-10 21:05: carousel and rich text
 
 The top third is now a carousel of three glass cards (`src/components/cards/*`, react-native-pager-view over expo-linear-gradient, GlassView with a white-card fallback, Swift Charts via @expo/ui for the week bars with a plain-View fallback). The header is the native Stack header "Coach". Coach messages render markdown (bold headings and bullets) once complete. A bodyweight question renders an inline numeric field instead of pills. Contract: the 21:00 amendment in `docs/spec.md`.
+
+## Update 2026-09-10 22:40: one surface
+
+The screen is one continuous surface: a screen-wide gradient (accent wash at the top fading to the background by 70%) behind a transparent native header (no material, no hairline), the transparent carousel region with its glass cards, and the transparent thread. Bubbles, pills and the composer keep their fills. The week-volume card uses plain bars (Swift Charts stays behind a flag: its axes cannot be hidden).
