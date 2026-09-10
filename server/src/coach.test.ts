@@ -21,6 +21,8 @@ const ANALYSIS = 'Squat has stalled for three sessions. Volume stays, load comes
 const MEMORY = 'Prefers early sessions. Left shoulder is the watch item.';
 const SHOULDER_REPLY = 'my shoulder pinched on incline';
 const PLAN_TASK_OPENING = 'Design the next training block';
+const SESSION_A = 'Lower A';
+const SESSION_B = 'Lower B';
 
 const PROFILE: Profile = {
   goal: 'get stronger',
@@ -38,6 +40,17 @@ const said = (role: Message['role'], text: string): Message => ({
   createdAt: '2026-09-10T10:00:00.000Z',
 });
 
+const squat = (weightKg: number) => ({
+  templateId: TEMPLATE_ID,
+  title: TEMPLATE_TITLE,
+  sets: SETS,
+  reps: REPS,
+  weightKg,
+  rpe: 8,
+  note: 'Brace before you unrack.',
+});
+
+/** The guard wants at least two sessions, so only the first one carries the weight under test. */
 function planJson(weightKg: number): string {
   return JSON.stringify({
     analysis: ANALYSIS,
@@ -45,21 +58,8 @@ function planJson(weightKg: number): string {
       name: 'Autumn block',
       weeks: 4,
       sessions: [
-        {
-          name: 'Lower A',
-          focus: 'squat and hinge',
-          exercises: [
-            {
-              templateId: TEMPLATE_ID,
-              title: TEMPLATE_TITLE,
-              sets: SETS,
-              reps: REPS,
-              weightKg,
-              rpe: 8,
-              note: 'Brace before you unrack.',
-            },
-          ],
-        },
+        { name: SESSION_A, focus: 'squat and hinge', exercises: [squat(weightKg)] },
+        { name: SESSION_B, focus: 'squat and hinge', exercises: [squat(APPROVED_KG)] },
       ],
     },
   });
@@ -120,7 +120,7 @@ function hevyStub() {
       listed('workouts', [
         {
           id: 'w-1',
-          title: 'Lower A',
+          title: SESSION_A,
           routine_id: null,
           description: '',
           start_time: '2026-09-01T10:00:00Z',
@@ -188,6 +188,24 @@ function harness(planTexts: string[]) {
   return { deps, state, sent: anthropic.sent, written };
 }
 
+const routinePost = (title: string): Call => ({
+  method: 'POST',
+  path: '/v1/routines',
+  body: {
+    routine: {
+      title,
+      folder_id: FOLDER_ID,
+      exercises: [
+        {
+          exercise_template_id: TEMPLATE_ID,
+          notes: 'RPE 8. Brace before you unrack.',
+          sets: Array.from({ length: SETS }, () => ({ type: 'normal', weight_kg: APPROVED_KG, reps: REPS })),
+        },
+      ],
+    },
+  },
+});
+
 describe('createProgram', () => {
   it('should retry the plan once, naming the violation, when the guard rejects the first block', async () => {
     const { deps, sent } = harness([planJson(OVER_CAP_KG), planJson(APPROVED_KG)]);
@@ -230,29 +248,7 @@ describe('createProgram', () => {
 
     await createProgram(deps, { profile: PROFILE, reason: 'intake answered' });
 
-    expect(written()).toEqual([
-      {
-        method: 'POST',
-        path: '/v1/routines',
-        body: {
-          routine: {
-            title: 'Lower A',
-            folder_id: FOLDER_ID,
-            exercises: [
-              {
-                exercise_template_id: TEMPLATE_ID,
-                notes: 'RPE 8. Brace before you unrack.',
-                sets: Array.from({ length: SETS }, () => ({
-                  type: 'normal',
-                  weight_kg: APPROVED_KG,
-                  reps: REPS,
-                })),
-              },
-            ],
-          },
-        },
-      },
-    ]);
+    expect(written()).toEqual([routinePost(SESSION_A), routinePost(SESSION_B)]);
   });
 
   it('should store the profile and the written routine id in state', async () => {
@@ -268,7 +264,7 @@ describe('createProgram', () => {
 
     const result = await createProgram(deps, { profile: PROFILE, reason: 'intake answered' });
 
-    expect(result).toBe(`${ANALYSIS}\n\nWritten to Hevy: Autumn block, 1 session — Lower A.`);
+    expect(result).toBe(`${ANALYSIS}\n\nWritten to Hevy: Autumn block, 2 sessions — ${SESSION_A}, ${SESSION_B}.`);
   });
 
   it('should throw when the second block still breaks the guard', async () => {

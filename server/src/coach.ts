@@ -9,8 +9,12 @@ import { chatRequest, planRequest, toAnthropicMessages, verdictRequest } from '.
 import type { Block, Exercise, Message, Profile, Session, State } from './state.js';
 
 export const MAX_TOOL_ROUNDS = 3;
+/** The proxy in front of the server closes a streamed response after ~100 s of silence; a plan call takes longer than that. */
+export const KEEPALIVE_MS = 15_000;
 
-const PROGRESS_LINE = '\n\nReading your history and writing your block…\n\n';
+const PROGRESS_LINE = '\n\nReading your history and writing your block';
+const HEARTBEAT = '.';
+const PROGRESS_END = '\n\n';
 const GUARD_RETRY = 'The guard rejected that block. Fix every violation below and return the whole block again.';
 const GUARD_FAILED = 'The plan broke the guard twice and was not written:';
 const UNKNOWN_TOOL = 'unknown tool';
@@ -159,11 +163,15 @@ async function runToolCall(deps: CoachDeps, call: Anthropic.ToolUseBlock, write:
   if (!input) return toolResult(call.id, BAD_TOOL_INPUT, true);
 
   write(PROGRESS_LINE);
+  const heartbeat = setInterval(() => write(HEARTBEAT), KEEPALIVE_MS);
   try {
     return toolResult(call.id, await createProgram(deps, input));
   } catch (error) {
     deps.log(`create_program failed: ${describe(error)}`);
     return toolResult(call.id, describe(error), true);
+  } finally {
+    clearInterval(heartbeat);
+    write(PROGRESS_END);
   }
 }
 

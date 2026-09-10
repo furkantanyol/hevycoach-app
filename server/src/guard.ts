@@ -6,6 +6,8 @@ export const NO_HISTORY_CAP_KG = 100;
 export const REPS = { min: 1, max: 30 } as const;
 export const SETS = { min: 1, max: 8 } as const;
 export const MIN_WEIGHT_KG = 0;
+export const MIN_SESSIONS = 2;
+export const MAX_SESSIONS = 6;
 
 export interface Violation {
   session: string;
@@ -19,10 +21,19 @@ interface Range {
 }
 
 const CAP_DECIMAL_PLACES = 2;
+const SESSIONS: Range = { min: MIN_SESSIONS, max: MAX_SESSIONS };
+/** Block-level violations have no exercise to name, so they carry this in place of one. */
+const BLOCK_SCOPE = 'block';
+const EMPTY_NAME = 'the block name is empty';
+const EMPTY_SESSION = 'the session has no exercises';
 
-/** `bestWeightKg` is undefined when the template has no history at all, which is not the same as a best of 0 kg. */
+/** Cables and bodyweight movements are logged at 0 kg, so a best of 0 is no weight evidence, not a 0 kg ceiling. */
+function hasWeightEvidence(bestWeightKg: number | undefined): bestWeightKg is number {
+  return bestWeightKg !== undefined && bestWeightKg > 0;
+}
+
 function weightCapKg(bestWeightKg: number | undefined): number {
-  if (bestWeightKg === undefined) return NO_HISTORY_CAP_KG;
+  if (!hasWeightEvidence(bestWeightKg)) return NO_HISTORY_CAP_KG;
   return Number((MAX_JUMP * bestWeightKg).toFixed(CAP_DECIMAL_PLACES));
 }
 
@@ -32,8 +43,8 @@ function weightReason(exercise: Exercise, bestWeightKg: number | undefined): str
   }
   const capKg = weightCapKg(bestWeightKg);
   if (exercise.weightKg <= capKg) return null;
-  if (bestWeightKg === undefined) {
-    return `weightKg ${exercise.weightKg} is above the ${NO_HISTORY_CAP_KG} kg cap for a template with no history`;
+  if (!hasWeightEvidence(bestWeightKg)) {
+    return `weightKg ${exercise.weightKg} is above the ${NO_HISTORY_CAP_KG} kg cap for a template with no logged weight`;
   }
   return `weightKg ${exercise.weightKg} is above the ${capKg} kg cap (${MAX_JUMP} x best logged ${bestWeightKg} kg)`;
 }
@@ -62,6 +73,21 @@ function reasonsFor(
   return reasons.filter((reason): reason is string => reason !== null);
 }
 
+/** The shape the model must return: a named block of real sessions, each holding at least one exercise. */
+function shapeViolations(block: Block): Violation[] {
+  const blockReasons = [
+    block.name.trim().length === 0 ? EMPTY_NAME : null,
+    rangeReason('sessions', block.sessions.length, SESSIONS),
+  ].filter((reason): reason is string => reason !== null);
+
+  return [
+    ...blockReasons.map((reason) => ({ session: BLOCK_SCOPE, exercise: BLOCK_SCOPE, reason })),
+    ...block.sessions
+      .filter((session) => session.exercises.length === 0)
+      .map((session) => ({ session: session.name, exercise: BLOCK_SCOPE, reason: EMPTY_SESSION })),
+  ];
+}
+
 export function checkBlock(
   block: Block,
   history: HistorySummary,
@@ -71,7 +97,7 @@ export function checkBlock(
     history.exercises.map((entry) => [entry.templateId, entry.bestWeightKg]),
   );
   const knownTemplateIds = new Set(catalogue.map((template) => template.id));
-  return block.sessions.flatMap((session) =>
+  const exerciseViolations = block.sessions.flatMap((session) =>
     session.exercises.flatMap((exercise) =>
       reasonsFor(exercise, bestWeightByTemplate, knownTemplateIds).map((reason) => ({
         session: session.name,
@@ -80,4 +106,5 @@ export function checkBlock(
       })),
     ),
   );
+  return [...shapeViolations(block), ...exerciseViolations];
 }

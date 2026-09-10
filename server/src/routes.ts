@@ -23,6 +23,8 @@ const COACH_ERROR = '\n[coach error] ';
 const PUSH_TITLE_FALLBACK = 'Session logged';
 const PUSH_DATA = { url: '/' };
 const FIRST_DELIVERY = 'first hevy delivery';
+const TURN_COMPLETED = 'chat turn completed';
+const TURN_FAILED = 'chat turn failed';
 const REDACTED = '[redacted]';
 const DEFAULT_LOG_LEVEL = 'info';
 
@@ -105,15 +107,24 @@ function remember(state: State, id: string): void {
   if (overflow > 0) state.seenEvents.splice(0, overflow);
 }
 
+/** chatTurn tags the message it saved, so a turn that wrote a block leaves a plan message last. */
+function turnRecord(deps: RouteDeps, startedAt: number): { ms: number; planned: boolean } {
+  return { ms: Date.now() - startedAt, planned: deps.coach.state.messages.at(-1)?.kind === 'plan' };
+}
+
+/** Fastify logs no "request completed" line for a hijacked reply, so the turn logs its own. */
 async function streamTurn(deps: RouteDeps, reply: FastifyReply, text: string): Promise<void> {
   reply.hijack();
   reply.raw.writeHead(OK, STREAM_HEADERS);
+  const startedAt = Date.now();
   try {
     await (deps.turn ?? chatTurn)(deps.coach, text, (chunk) => {
       reply.raw.write(chunk);
     });
+    reply.log.info(turnRecord(deps, startedAt), TURN_COMPLETED);
   } catch (error) {
     reply.raw.write(`${COACH_ERROR}${describe(error)}`);
+    reply.log.info(turnRecord(deps, startedAt), `${TURN_FAILED}: ${describe(error)}`);
   }
   reply.raw.end();
 }

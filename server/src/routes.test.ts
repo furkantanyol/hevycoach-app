@@ -21,6 +21,7 @@ const MESSAGES = '/messages';
 const DEVICE = '/device';
 const WEBHOOK = '/webhook/hevy';
 const FIRST_DELIVERY = 'first hevy delivery';
+const TURN_COMPLETED = 'chat turn completed';
 const REDACTED = '[redacted]';
 
 type Headers = Record<string, string>;
@@ -78,6 +79,11 @@ function captureLogger(records: unknown[][]): FastifyBaseLogger {
 function firstDeliveryLog(records: unknown[][]): { headers: Record<string, string> } | undefined {
   const entry = records.find((args) => args[1] === FIRST_DELIVERY);
   return entry?.[0] as { headers: Record<string, string> } | undefined;
+}
+
+function turnLog(records: unknown[][]): [unknown, unknown] | undefined {
+  const entry = records.find((args) => String(args[1]).startsWith('chat turn'));
+  return entry as [unknown, unknown] | undefined;
 }
 
 const message: Message = {
@@ -165,6 +171,30 @@ describe('POST /messages', () => {
     const response = await post(app, MESSAGES, { text: 'hi' }, appAuth);
 
     expect(response.headers['content-type']).toBe('text/plain; charset=utf-8');
+  });
+
+  it('should log how long the turn took and whether it wrote a plan', async () => {
+    const records: unknown[][] = [];
+    const turn: RouteDeps['turn'] = async (coach) => {
+      coach.state.messages.push({ ...message, kind: 'plan' });
+    };
+    const { app } = harness({ turn, logger: captureLogger(records) });
+
+    await post(app, MESSAGES, { text: 'hi' }, appAuth);
+
+    expect(turnLog(records)).toEqual([{ ms: expect.any(Number), planned: true }, TURN_COMPLETED]);
+  });
+
+  it('should log the failure with the error message when the turn throws', async () => {
+    const records: unknown[][] = [];
+    const turn: RouteDeps['turn'] = async () => {
+      throw new Error('anthropic is down');
+    };
+    const { app } = harness({ turn, logger: captureLogger(records) });
+
+    await post(app, MESSAGES, { text: 'hi' }, appAuth);
+
+    expect(turnLog(records)?.[1]).toBe('chat turn failed: anthropic is down');
   });
 
   it('should append the coach error to the stream when the turn throws', async () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { checkBlock, MAX_JUMP, MIN_WEIGHT_KG, NO_HISTORY_CAP_KG, REPS, SETS } from './guard.js';
+import { checkBlock, MAX_JUMP, MAX_SESSIONS, MIN_SESSIONS, MIN_WEIGHT_KG, NO_HISTORY_CAP_KG, REPS, SETS } from './guard.js';
 import { type HistorySummary, type TemplateOption, TOP_EXERCISES } from './hevy.js';
 import type { Block, Exercise } from './state.js';
 
@@ -55,6 +55,7 @@ const baseExercise: Exercise = {
   note: 'two clean reps in reserve',
 };
 
+/** The cases below vary the first session; the second one is always valid, so only the count rule sees it. */
 function blockWith(...exercises: Partial<Exercise>[]): Block {
   return {
     name: 'Autumn hypertrophy',
@@ -68,6 +69,7 @@ function blockWith(...exercises: Partial<Exercise>[]): Block {
         hevyRoutineId: null,
         exercises: exercises.map((exercise) => ({ ...baseExercise, ...exercise })),
       },
+      { name: 'Lower B', focus: 'hamstrings', hevyRoutineId: null, exercises: [baseExercise] },
     ],
   };
 }
@@ -97,7 +99,7 @@ const cases: GuardCase[] = [
   {
     name: 'should flag a weight above the no-history cap',
     exercise: { templateId: CURL_ID, title: 'Bicep Curl (Dumbbell)', weightKg: 101 },
-    reasons: ['weightKg 101 is above the 100 kg cap for a template with no history'],
+    reasons: ['weightKg 101 is above the 100 kg cap for a template with no logged weight'],
   },
   {
     name: 'should allow a bodyweight exercise carrying no weight',
@@ -105,9 +107,14 @@ const cases: GuardCase[] = [
     reasons: [],
   },
   {
-    name: 'should flag a loaded weight on a movement only ever logged unloaded',
+    name: 'should read a best of 0 kg as no weight evidence and allow up to the no-history cap',
     exercise: { templateId: PULL_UP_ID, title: 'Pull Up', weightKg: 95 },
-    reasons: ['weightKg 95 is above the 0 kg cap (1.15 x best logged 0 kg)'],
+    reasons: [],
+  },
+  {
+    name: 'should flag a weight above the no-history cap on a movement only ever logged unloaded',
+    exercise: { templateId: PULL_UP_ID, title: 'Pull Up', weightKg: 101 },
+    reasons: ['weightKg 101 is above the 100 kg cap for a template with no logged weight'],
   },
   {
     name: 'should flag a negative weight',
@@ -162,7 +169,7 @@ describe('checkBlock', () => {
 
     expect(violations.map((violation) => violation.reason)).toEqual([
       'templateId tmpl-unknown is not in the catalogue',
-      'weightKg 400 is above the 100 kg cap for a template with no history',
+      'weightKg 400 is above the 100 kg cap for a template with no logged weight',
       'reps 40 is outside 1-30',
       'sets 12 is outside 1-8',
     ]);
@@ -199,19 +206,50 @@ describe('checkBlock', () => {
     expect(violations).toEqual([]);
   });
 
-  it('should return no violations for a block with no sessions', () => {
+  it('should flag a block with no sessions', () => {
     const empty: Block = { ...blockWith(), sessions: [] };
 
-    expect(checkBlock(empty, history, catalogue)).toEqual([]);
+    expect(checkBlock(empty, history, catalogue).map((violation) => violation.reason)).toEqual([
+      'sessions 0 is outside 2-6',
+    ]);
+  });
+
+  it('should flag a block with more sessions than the maximum', () => {
+    const base = blockWith({});
+    const tooMany = MAX_SESSIONS + 1;
+    const crowded: Block = { ...base, sessions: Array.from({ length: tooMany }, () => base.sessions[0]) };
+
+    expect(checkBlock(crowded, history, catalogue).map((violation) => violation.reason)).toEqual([
+      `sessions ${tooMany} is outside ${MIN_SESSIONS}-${MAX_SESSIONS}`,
+    ]);
+  });
+
+  it('should flag a session that carries no exercises', () => {
+    const block = blockWith({});
+    block.sessions[1].exercises = [];
+
+    expect(checkBlock(block, history, catalogue)).toEqual([
+      { session: 'Lower B', exercise: 'block', reason: 'the session has no exercises' },
+    ]);
+  });
+
+  it('should flag a block with an empty name', () => {
+    const unnamed: Block = { ...blockWith({}), name: '' };
+
+    expect(checkBlock(unnamed, history, catalogue)).toEqual([
+      { session: 'block', exercise: 'block', reason: 'the block name is empty' },
+    ]);
   });
 
   it('should hold the bounds the spec fixes', () => {
-    expect({ MAX_JUMP, NO_HISTORY_CAP_KG, MIN_WEIGHT_KG, REPS, SETS }).toEqual({
+    expect({ MAX_JUMP, NO_HISTORY_CAP_KG, MIN_WEIGHT_KG, REPS, SETS, MIN_SESSIONS, MAX_SESSIONS }).toEqual({
       MAX_JUMP: 1.15,
       NO_HISTORY_CAP_KG: 100,
       MIN_WEIGHT_KG: 0,
       REPS: { min: 1, max: 30 },
       SETS: { min: 1, max: 8 },
+      MIN_SESSIONS: 2,
+      MAX_SESSIONS: 6,
     });
   });
 });

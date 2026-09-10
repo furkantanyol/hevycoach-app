@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { createHevyClient } from '@furkantanyol/hevy-client';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { chatTurn, type CoachDeps, verdict } from './coach.js';
 import { contextBlock, MEMORY_MAX_CHARACTERS, SYSTEM_PROMPT, USER_INPUT_CLOSE, USER_INPUT_OPEN } from './prompt.js';
 import { emptyState, type Block, type Message, type Profile, type State } from './state.js';
@@ -14,6 +14,7 @@ const NEW_ROUTINE_ID = 'r-new-1';
 const FOLDER_ID = 7;
 const WORKOUT_ID = 'w-1';
 const SESSION_NAME = 'Lower A';
+const SECOND_SESSION_NAME = 'Lower B';
 const APPROVED_KG = 110;
 const SETS = 3;
 const REPS = 5;
@@ -21,9 +22,14 @@ const USER_TEXT = 'four days a week';
 const VERDICT_TEXT = 'Squat moved. Same load next week.';
 const MEMORY = 'Squat at 110 kg for 3x5 at RPE 8.';
 const PARTIAL_TEXT = 'Squat day it is.';
+const PLAN_REPLY = 'Your block is in Hevy.';
 const OVERLONG_MEMORY = 'x'.repeat(MEMORY_MAX_CHARACTERS + 1);
 const SHOULDER_REPLY = 'shoulder pinched on incline';
 const VERDICT_TASK_OPENING = 'Judge this finished workout';
+const HEARTBEAT = '.';
+const SLOW_PLAN_MS = 40_000;
+/** 40 s of plan call spans the 15 s and the 30 s tick of the keep-alive. */
+const DOTS_IN_A_SLOW_PLAN = 2;
 
 const said = (text: string): Message => ({ id: 'm-1', role: 'user', text, createdAt: '2026-09-10T10:00:00.000Z' });
 
@@ -66,7 +72,10 @@ const PLAN_JSON = JSON.stringify({
   block: {
     name: BLOCK.name,
     weeks: BLOCK.weeks,
-    sessions: [{ name: SESSION_NAME, focus: 'squat and hinge', exercises: BLOCK.sessions[0].exercises }],
+    sessions: [
+      { name: SESSION_NAME, focus: 'squat and hinge', exercises: BLOCK.sessions[0].exercises },
+      { name: SECOND_SESSION_NAME, focus: 'squat and hinge', exercises: BLOCK.sessions[0].exercises },
+    ],
   },
 });
 
@@ -121,7 +130,12 @@ interface Sent {
   messages: { role: string; content: unknown }[];
 }
 
-function anthropicStub(streamed: Streamed[], plain: string[]) {
+/** A plain reply is the JSON a plan or verdict call returns, optionally after `afterMs` on the clock. */
+type Plain = string | { text: string; afterMs: number };
+
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => { setTimeout(resolve, ms); });
+
+function anthropicStub(streamed: Streamed[], plain: Plain[]) {
   const sent: Sent[] = [];
   const fetchImpl: typeof fetch = async (_input, init) => {
     const body = typeof init?.body === 'string' ? init.body : '{}';
@@ -133,7 +147,9 @@ function anthropicStub(streamed: Streamed[], plain: string[]) {
     }
     const next = plain.shift();
     if (next === undefined) throw new Error('no plain reply queued');
-    return jsonResponse(next);
+    if (typeof next === 'string') return jsonResponse(next);
+    await sleep(next.afterMs);
+    return jsonResponse(next.text);
   };
   return { sent, client: new Anthropic({ apiKey: 'test', fetch: fetchImpl, maxRetries: 0 }) };
 }
@@ -184,7 +200,7 @@ function hevyStub() {
   return createHevyClient({ apiKey: 'test', fetch: fetchImpl, retries: 0 });
 }
 
-function harness(streamed: Streamed[] = [], plain: string[] = [], seed: Partial<State> = {}) {
+function harness(streamed: Streamed[] = [], plain: Plain[] = [], seed: Partial<State> = {}) {
   const state: State = { ...emptyState(), ...seed };
   const anthropic = anthropicStub(streamed, plain);
   const saved: string[][] = [];
@@ -201,7 +217,7 @@ function harness(streamed: Streamed[] = [], plain: string[] = [], seed: Partial<
   return { deps, state, saved, sent: anthropic.sent };
 }
 
-const planTurn = (): Streamed[] => [{ toolInput: { profile: PROFILE, reason: 'intake answered' } }, { text: 'Your block is in Hevy.' }];
+const planTurn = (): Streamed[] => [{ toolInput: { profile: PROFILE, reason: 'intake answered' } }, { text: PLAN_REPLY }];
 
 describe('chatTurn', () => {
   it('should save the user message before the turn can fail', async () => {
@@ -234,6 +250,37 @@ describe('chatTurn', () => {
     await expect(chatTurn(deps, USER_TEXT, () => {})).rejects.toThrow();
 
     expect(saved.at(-1)).toEqual([USER_TEXT, PARTIAL_TEXT]);
+  });
+
+  it('should keep the stream alive with a dot every keep-alive interval while the plan runs', async () => {
+    const { deps } = harness(planTurn(), [{ text: PLAN_JSON, afterMs: SLOW_PLAN_MS }]);
+    const chunks: string[] = [];
+    vi.useFakeTimers();
+
+    try {
+      const turn = chatTurn(deps, USER_TEXT, (chunk) => chunks.push(chunk));
+      await vi.advanceTimersByTimeAsync(SLOW_PLAN_MS);
+      await turn;
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(chunks.filter((chunk) => chunk === HEARTBEAT)).toHaveLength(DOTS_IN_A_SLOW_PLAN);
+  });
+
+  it('should keep the heartbeat dots out of the saved assistant message', async () => {
+    const { deps, state } = harness(planTurn(), [{ text: PLAN_JSON, afterMs: SLOW_PLAN_MS }]);
+    vi.useFakeTimers();
+
+    try {
+      const turn = chatTurn(deps, USER_TEXT, () => {});
+      await vi.advanceTimersByTimeAsync(SLOW_PLAN_MS);
+      await turn;
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(state.messages[1].text).toBe(PLAN_REPLY);
   });
 
   it('should leave the plan fields off a turn that wrote no block', async () => {
