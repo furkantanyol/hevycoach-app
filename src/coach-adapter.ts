@@ -52,12 +52,13 @@ function lastUserTurn(messages: readonly ThreadMessage[]): UserTurn {
   };
 }
 
-/** `kind`, `choices` and `multi` are what the message renderer reads back. */
+/** `kind`, `choices`, `multi` and `input` are what the message renderer reads back. */
 function customOf(message: Message): Record<string, unknown> {
   return {
     ...(message.kind !== undefined && { kind: message.kind }),
     ...(message.choices !== undefined && { choices: message.choices }),
     ...(message.multi !== undefined && { multi: message.multi }),
+    ...(message.input !== undefined && { input: message.input }),
   };
 }
 

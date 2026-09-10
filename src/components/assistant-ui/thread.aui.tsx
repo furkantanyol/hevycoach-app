@@ -39,6 +39,9 @@ const AT_BOTTOM_SLACK = 24;
  * A content container that grows to the viewport and stacks to the end keeps a
  * short thread sitting on the composer the way iOS Messages does. An empty
  * thread draws nothing: the server posts the opener on the first load.
+ *
+ * `keyboardShouldPersistTaps="handled"` is what lets the first tap on a pill or
+ * on the number field's Send button count: without it the open keyboard eats it.
  */
 export function Thread() {
   const insets = useSafeAreaInsets();
@@ -70,6 +73,7 @@ export function Thread() {
         style={styles.flex}
         contentContainerStyle={styles.messageList}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
         onLayout={readViewport}
         onScroll={trackBottom}
         onContentSizeChange={followEnd}

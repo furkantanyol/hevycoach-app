@@ -1,8 +1,12 @@
 /**
- * The root: one route, push registration, and the notification observer.
- * There is nowhere to navigate — the app is a single screen — so a tap on a
- * review push bumps the reload counter in src/lib/reload.ts and the thread
- * remounts on the new key with the server's history.
+ * The root: one route under a native header, push registration, and the
+ * notification observer. There is nowhere to navigate — the app is a single
+ * screen — so a tap on a review push bumps the reload counter in
+ * src/lib/reload.ts and the thread remounts on the new key with the server's
+ * history.
+ *
+ * The header is left at its iOS defaults: on iOS 26 that is Liquid Glass with
+ * no configuration, and the screen's own chrome would only fight it.
  */
 import * as Notifications from 'expo-notifications';
 import { Stack } from 'expo-router';
@@ -10,6 +14,8 @@ import { useEffect } from 'react';
 
 import { bumpReload } from '../lib/reload';
 import { registerForPush } from '../push';
+
+const SCREEN_TITLE = 'Coach';
 
 /**
  * Clearing the stored response keeps the same tap from being replayed on the
@@ -41,8 +47,8 @@ export default function RootLayout() {
   usePushNotifications();
 
   return (
-    <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="index" />
+    <Stack>
+      <Stack.Screen name="index" options={{ title: SCREEN_TITLE, headerLargeTitleEnabled: false }} />
     </Stack>
   );
 }
