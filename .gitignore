@@ -30,8 +30,11 @@ yarn-error.*
 .DS_Store
 *.pem
 
-# local env files
+# local env files (app and server)
+.env
+.env.*
 .env*.local
+!.env.example
 
 # typescript
 *.tsbuildinfo
@@ -45,10 +48,8 @@ example
 # eas build --local output
 build/
 
-# Edge function secrets
-.env
-.env.*
-supabase/functions/.env
+# server runtime state
+server/data/
 
 # impeccable session artifacts
 .impeccable/questions/

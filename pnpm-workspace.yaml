@@ -3,8 +3,10 @@
 # (reading 'transformFile')". Expo documents the hoisted linker for pnpm.
 nodeLinker: hoisted
 
+packages:
+  - 'server'
+
 allowBuilds:
-  '@sentry/cli': true
   esbuild: true
   unrs-resolver: true
 minimumReleaseAgeExclude:

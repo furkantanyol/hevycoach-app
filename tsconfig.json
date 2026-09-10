@@ -8,19 +8,14 @@
       ],
       "@/assets/*": [
         "./assets/*"
-      ],
-      "@/modules/*": [
-        "./modules/*"
       ]
     },
     "types": [
-      "expo/types",
-      "jest",
-      "node"
+      "expo/types"
     ]
   },
   "exclude": [
-    "supabase"
+    "server"
   ],
   "include": [
     "**/*.ts",

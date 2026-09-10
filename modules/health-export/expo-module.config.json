@@ -1,9 +1,0 @@
-{
-  "platforms": ["apple", "android", "web"],
-  "apple": {
-    "modules": ["HealthExportModule"]
-  },
-  "android": {
-    "modules": ["expo.modules.healthexport.HealthExportModule"]
-  }
-}
