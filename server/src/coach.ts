@@ -18,6 +18,9 @@ const PROGRESS_END = '\n\n';
 const GUARD_RETRY = 'The guard rejected that block. Fix every violation below and return the whole block again.';
 const GUARD_FAILED = 'The plan broke the guard twice and was not written:';
 const UNKNOWN_TOOL = 'unknown tool';
+const EMPTY_BLOCK = 'plan attempt returned an empty block';
+/** Enough of the analysis to see what the model was trying to say instead of planning. */
+const ANALYSIS_LOG_MAX = 300;
 const BAD_TOOL_INPUT = 'create_program was called with an unreadable input';
 
 export interface CoachDeps {
@@ -105,9 +108,24 @@ async function planCall(deps: CoachDeps, task: string): Promise<PlanResult> {
   return JSON.parse(textOf(message)) as PlanResult;
 }
 
+/** The shapes the guard reads as an empty block: no name, no sessions, or a session with nothing in it. */
+function isEmptyBlock(block: Block): boolean {
+  if (block.name.trim().length === 0) return true;
+  if (block.sessions.length === 0) return true;
+  return block.sessions.some((session) => session.exercises.length === 0);
+}
+
+/** An empty block usually means the model wanted to say something instead of planning; the words land in the analysis, which nothing else surfaces. */
+function logEmptyBlock(deps: CoachDeps, analysis: string, block: Block): void {
+  const exercises = block.sessions.reduce((total, session) => total + session.exercises.length, 0);
+  const counts = `sessions: ${block.sessions.length}, exercises: ${exercises}`;
+  deps.log(`${EMPTY_BLOCK} (${counts}): ${analysis.slice(0, ANALYSIS_LOG_MAX)}`);
+}
+
 async function attempt(run: PlanRun, task: string): Promise<Attempt> {
   const plan = await planCall(run.deps, task);
   const block = toBlock(plan, run.deps.state.block, run.reason);
+  if (isEmptyBlock(block)) logEmptyBlock(run.deps, plan.analysis, block);
   return { analysis: plan.analysis, block, violations: checkBlock(block, run.summary, run.catalogue) };
 }
 

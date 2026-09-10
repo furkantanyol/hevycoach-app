@@ -258,6 +258,10 @@ describe('planTask', () => {
   it('should ask for the number of sessions the profile committed to', () => {
     expect(planTask(profile, 'history', 'catalogue', 'reason')).toContain('4 sessions a week');
   });
+
+  it('should forbid an empty block so the model cannot answer with words instead', () => {
+    expect(planTask(profile, 'history', 'catalogue', 'reason')).toContain('Never return an empty block');
+  });
 });
 
 describe('verdictTask', () => {

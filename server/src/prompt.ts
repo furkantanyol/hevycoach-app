@@ -1,4 +1,5 @@
 import type Anthropic from '@anthropic-ai/sdk';
+import { MAX_SESSIONS, MIN_SESSIONS } from './guard.js';
 import type { Block, Exercise, Profile, Session, State } from './state.js';
 
 export const USER_INPUT_OPEN = '<<<UNTRUSTED_USER_INPUT>>>';
@@ -186,7 +187,8 @@ export const PLAN_OUTPUT_SCHEMA: Record<string, unknown> = {
   properties: {
     analysis: {
       type: 'string',
-      description: 'for the athlete to read: strengths, weaknesses, stalls, what you are keeping and why. Your voice, five short lines at most, no headers.',
+      description:
+        'for the athlete to read: strengths, weaknesses, stalls, what you are keeping and why. Your voice, five short lines at most, no headers. Never a question and never a refusal: when something is unknown, name the conservative assumption you made in one line.',
     },
     block: {
       type: 'object',
@@ -195,7 +197,7 @@ export const PLAN_OUTPUT_SCHEMA: Record<string, unknown> = {
         weeks: { type: 'integer', description: `mesocycle length before the deload, ${WEEKS_RANGE}` },
         sessions: {
           type: 'array',
-          description: 'one session per training day of the week, in the order they are trained',
+          description: `one session per training day of the week, in the order they are trained: ${MIN_SESSIONS} to ${MAX_SESSIONS} of them, matching the days per week in the profile, each holding exercises built from the supplied template ids. Never an empty list.`,
           items: SESSION_SCHEMA,
         },
       },
@@ -244,6 +246,8 @@ export function planTask(profile: Profile, history: string, catalogue: string, r
 Every templateId must be copied verbatim from the catalogue; an id that is not in it cannot be written to Hevy. Set weightKg from the history: at most ${MAX_JUMP_PERCENT}% above the best weight logged for that template, at most ${NO_HISTORY_CAP_KG} kg when the template has no history, and 0 for bodyweight movements. Sets stay in ${SET_RANGE}, reps in ${REP_RANGE}, RPE in ${RPE_RANGE}, and the block runs ${WEEKS_RANGE} weeks.
 
 Give the athlete ${profile.daysPerWeek} sessions a week, every muscle twice a week, volume inside the landmarks, and DUP if they are intermediate.
+
+The block is always complete: a name, ${MIN_SESSIONS} to ${MAX_SESSIONS} sessions matching the days per week above, and every session holding exercises built from the catalogue ids. Never return an empty block, and never ask a question in the analysis — nothing here can answer it. When something is unknown, make the conservative assumption, program it, and state that assumption in one line of the analysis.
 
 ${data}`;
 }

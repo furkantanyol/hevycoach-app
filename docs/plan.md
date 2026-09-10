@@ -14,15 +14,15 @@ Interview: Friday 2026-09-11 16:00 (Europe/Madrid). Each step ends in a demoable
 
 ## Step 1 — server (afternoon)
 
-- [ ] `state.ts` with atomic writes and a round-trip test.
-- [ ] `hevy.ts`: history summary, template catalogue, routine folder + writes (mocked-fetch tests from fixture workouts).
-- [ ] `guard.ts` table tests.
-- [ ] `prompt.ts`: system prompt per spec, delimiter wrapper, tests.
-- [ ] `coach.ts`: chat turn with streaming and the `create_program` tool; plan; verdict. Load the `claude-api` skill first.
-- [ ] `routes.ts`: five routes, bearer auth, webhook replay guard, first-delivery logging.
-- [ ] `push.ts` with expo-server-sdk.
-- [ ] Cloudflare Tunnel created via API; `brew install cloudflared`; tunnel running; `PUBLIC_URL` set; webhook self-registration logged.
-- [ ] Manual check with curl: intake conversation → `create_program` → routines visible in Hevy under "HevyCoach".
+- [x] `state.ts` with atomic writes and a round-trip test.
+- [x] `hevy.ts`: history summary, template catalogue, routine folder + writes (mocked-fetch tests from fixture workouts).
+- [x] `guard.ts` table tests.
+- [x] `prompt.ts`: system prompt per spec, delimiter wrapper, tests.
+- [x] `coach.ts`: chat turn with streaming and the `create_program` tool; plan; verdict. Load the `claude-api` skill first.
+- [x] `routes.ts`: five routes, bearer auth, webhook replay guard, first-delivery logging.
+- [x] `push.ts` with expo-server-sdk.
+- [x] Cloudflare Tunnel created via API; `brew install cloudflared`; tunnel running; `PUBLIC_URL` set; webhook self-registration logged.
+- [x] Manual check with curl: intake conversation → `create_program` → routines visible in Hevy under "HevyCoach".
 - [ ] Owner logs one workout in Hevy → delivery headers recorded → verdict message in `GET /messages`.
 
 ## Step 2 — app (evening)

@@ -21,6 +21,8 @@ const ANALYSIS = 'Squat has stalled for three sessions. Volume stays, load comes
 const MEMORY = 'Prefers early sessions. Left shoulder is the watch item.';
 const SHOULDER_REPLY = 'my shoulder pinched on incline';
 const PLAN_TASK_OPENING = 'Design the next training block';
+const EMPTY_ANALYSIS = 'Before I write this I need to know which days of the week you can train.';
+const EMPTY_BLOCK_LOG = `plan attempt returned an empty block (sessions: 0, exercises: 0): ${EMPTY_ANALYSIS}`;
 const SESSION_A = 'Lower A';
 const SESSION_B = 'Lower B';
 
@@ -64,6 +66,12 @@ function planJson(weightKg: number): string {
     },
   });
 }
+
+/** What the model returned twice in a live turn: the words in the analysis, nothing in the block. */
+const EMPTY_PLAN_JSON = JSON.stringify({
+  analysis: EMPTY_ANALYSIS,
+  block: { name: '', weeks: 4, sessions: [] },
+});
 
 interface Sent {
   system: { type: string; text: string; cache_control?: { type: string } }[];
@@ -176,16 +184,19 @@ function harness(planTexts: string[]) {
   const anthropic = anthropicStub(planTexts);
   const hevy = hevyStub();
   const state = emptyState();
+  const logs: string[] = [];
   const deps: CoachDeps = {
     anthropic: anthropic.client,
     hevy: hevy.client,
     state,
     save: async () => {},
     models: { plan: 'plan-model', chat: 'chat-model' },
-    log: () => {},
+    log: (message) => {
+      logs.push(message);
+    },
   };
   const written = () => hevy.calls.filter((call) => call.method !== 'GET' && call.path === '/v1/routines');
-  return { deps, state, sent: anthropic.sent, written };
+  return { deps, state, sent: anthropic.sent, written, logs };
 }
 
 const routinePost = (title: string): Call => ({
@@ -216,6 +227,14 @@ describe('createProgram', () => {
     expect(sent[1].messages.at(-1)?.content).toContain(
       `weightKg ${OVER_CAP_KG} is above the ${CAP_KG} kg cap (1.15 x best logged ${BEST_KG} kg)`,
     );
+  });
+
+  it('should log the analysis and the counts when a plan attempt returns an empty block', async () => {
+    const { deps, logs } = harness([EMPTY_PLAN_JSON, planJson(APPROVED_KG)]);
+
+    await createProgram(deps, { profile: PROFILE, reason: 'intake answered' });
+
+    expect(logs).toEqual([EMPTY_BLOCK_LOG]);
   });
 
   it('should send the cached system prompt and the coach context to the plan model', async () => {
