@@ -7,6 +7,7 @@ import Animated, {
   useReducedMotion,
   useSharedValue,
   withTiming,
+  type SharedValue,
 } from 'react-native-reanimated';
 
 import { loadStep } from './load-band';
@@ -60,6 +61,8 @@ export function WeekStrip({ days, selectedKey, onSelect }: WeekStripProps) {
   const [width, setWidth] = useState(0);
 
   const columnWidth = days.length > 0 ? width / days.length : 0;
+  /** The last column's left edge: as far as the reading may travel before it leaves the week. */
+  const highestReading = Math.max(0, (days.length - 1) * columnWidth);
   const selected = Math.max(
     0,
     days.findIndex((day) => day.key === selectedKey)
@@ -70,7 +73,7 @@ export function WeekStrip({ days, selectedKey, onSelect }: WeekStripProps) {
   /** Where the finger has dragged the reading to; null whenever it is resting on a column. */
   const dragged = useSharedValue<number | null>(null);
 
-  /** Called from the gesture: it is deliberately cheap and idempotent, see `travel` below. */
+  /** Called from the gesture: it is deliberately cheap and idempotent, see `readingGesture`. */
   const selectAt = (x: number) => {
     const index = Math.min(days.length - 1, Math.max(0, Math.floor(x / columnWidth)));
     const day = days[index];
@@ -79,30 +82,8 @@ export function WeekStrip({ days, selectedKey, onSelect }: WeekStripProps) {
     }
   };
 
-  // The reading follows the finger frame by frame on the UI thread, then settles on the column it
-  // was released over; the selection it reports back is what re-rules the table below.
-  const travel = Gesture.Pan()
-    // The strip lives inside a scrolling sheet, so the reading only takes the gesture once the
-    // finger has committed sideways; anything vertical stays with the scroll.
-    .activeOffsetX([-ACTIVATION_SLOP, ACTIVATION_SLOP])
-    .failOffsetY([-ACTIVATION_SLOP, ACTIVATION_SLOP])
-    .onUpdate((event) => {
-      const highest = (days.length - 1) * columnWidth;
-      const target = event.x - columnWidth / 2;
-      dragged.value = Math.min(highest, Math.max(0, target));
-      // The table re-rules under the finger rather than on release, which is what ties the chart
-      // to the detail. `selectAt` is a no-op until the reading crosses into the next column, so
-      // this renders once per column crossed and not once per frame.
-      runOnJS(selectAt)(event.x);
-    })
-    .onEnd(() => {
-      // Released: the reading settles onto the column the table is already showing.
-      dragged.value = null;
-    });
-
-  const tap = Gesture.Tap().onEnd((event) => {
-    runOnJS(selectAt)(event.x);
-  });
+  // Everything the gesture needs off `days` is measured here, on the JS thread, as numbers.
+  const reading = readingGesture({ columnWidth, highestReading, dragged, selectAt });
 
   const readingStyle = useAnimatedStyle(() => ({
     left: dragged.value ?? (reduceMotion ? resting : withTiming(resting, { duration: TRAVEL_MS })),
@@ -113,7 +94,7 @@ export function WeekStrip({ days, selectedKey, onSelect }: WeekStripProps) {
   return (
     <View>
       <Rule />
-      <GestureDetector gesture={Gesture.Exclusive(travel, tap)}>
+      <GestureDetector gesture={reading}>
         <View
           onLayout={onLayout}
           style={styles.strip}
@@ -158,6 +139,53 @@ export function WeekStrip({ days, selectedKey, onSelect }: WeekStripProps) {
       <Rule weight="ink" />
     </View>
   );
+}
+
+type ReadingGesture = {
+  /** One column's width in points. The reading is a column wide and is centred on the finger. */
+  readonly columnWidth: number;
+  /** The furthest left edge the reading may travel to, which is the last column's. */
+  readonly highestReading: number;
+  /** Where the finger has dragged the reading to; null whenever it is resting on a column. */
+  readonly dragged: SharedValue<number | null>;
+  readonly selectAt: (x: number) => void;
+};
+
+/**
+ * The reading follows the finger frame by frame on the UI thread, then settles on the column it
+ * was released over; the selection it reports back is what re-rules the table below.
+ *
+ * Built out here, away from the component, on purpose. Every gesture callback below is a worklet,
+ * and Reanimated copies each variable the body names onto the UI thread — so naming `days` in one
+ * would try to copy the `Date` each entry carries and red-screen the app on the first frame. Out
+ * here `days` is not in scope to be named: only numbers, the shared value and `selectAt` cross
+ * over, and `selectAt` crosses as a reference that `runOnJS` calls back on the JS thread, where
+ * its own closure over `days` still lives. Pass primitives in; never an array, object or `Date`.
+ */
+function readingGesture({ columnWidth, highestReading, dragged, selectAt }: ReadingGesture) {
+  const travel = Gesture.Pan()
+    // The strip lives inside a scrolling sheet, so the reading only takes the gesture once the
+    // finger has committed sideways; anything vertical stays with the scroll.
+    .activeOffsetX([-ACTIVATION_SLOP, ACTIVATION_SLOP])
+    .failOffsetY([-ACTIVATION_SLOP, ACTIVATION_SLOP])
+    .onUpdate((event) => {
+      const target = event.x - columnWidth / 2;
+      dragged.value = Math.min(highestReading, Math.max(0, target));
+      // The table re-rules under the finger rather than on release, which is what ties the chart
+      // to the detail. `selectAt` is a no-op until the reading crosses into the next column, so
+      // this renders once per column crossed and not once per frame.
+      runOnJS(selectAt)(event.x);
+    })
+    .onEnd(() => {
+      // Released: the reading settles onto the column the table is already showing.
+      dragged.value = null;
+    });
+
+  const tap = Gesture.Tap().onEnd((event) => {
+    runOnJS(selectAt)(event.x);
+  });
+
+  return Gesture.Exclusive(travel, tap);
 }
 
 type DayColumnProps = {
