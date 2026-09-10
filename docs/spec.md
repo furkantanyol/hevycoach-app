@@ -43,7 +43,7 @@ Node 24, TypeScript strict, ESM. Fastify 5, `@anthropic-ai/sdk`, `@furkantanyol/
 
 ### Env (`server/.env`, gitignored; `server/.env.example` committed)
 
-`HEVY_API_KEY`, `ANTHROPIC_API_KEY`, `APP_TOKEN` (random, shared with the app), `WEBHOOK_SECRET` (random, sent to Hevy as the subscription authToken), `PUBLIC_URL` (`https://coach.furkantanyol.com`), `PORT=3001`, optional `PLAN_MODEL` (default `claude-opus-5`) and `CHAT_MODEL` (default `claude-sonnet-5`), optional `LOG_LEVEL` (default `info`) for the Fastify logger, optional `CLOUDFLARE_TUNNEL_TOKEN` for the `tunnel` script.
+`HEVY_API_KEY`, `ANTHROPIC_API_KEY`, `APP_TOKEN` (random, shared with the app), `WEBHOOK_SECRET` (random, sent to Hevy as the subscription authToken), `PUBLIC_URL` (`https://coach.furkantanyol.com`), `PORT=3001`, optional `PLAN_MODEL` (default `claude-opus-5`) and `CHAT_MODEL` (default `claude-sonnet-5`; the owner's `.env` sets it to `claude-opus-5` since 2026-09-10 19:55, after Sonnet returned a garbled review message through the structured-output path), optional `LOG_LEVEL` (default `info`) for the Fastify logger, optional `CLOUDFLARE_TUNNEL_TOKEN` for the `tunnel` script.
 
 ### State (`server/data/state.json`)
 
