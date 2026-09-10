@@ -165,3 +165,47 @@ The plan is still built through the chat: after PUT /profile the app POSTs "Buil
 - Onboarding (17:45, reduced after the owner found six steps overwhelming): Welcome; 1 About you (sex, age); 2 Goals and schedule (goals multi-select, days per week and bodyweight prefilled); 3 Anything to work around (injuries, optional notes); 4 Review and build (PUT /profile, streamed "Build my block.", then the Plan tab). Session length, years training and equipment are prefilled silently and editable in Profile; training style defaults to hybrid and cardio to none. Design: `docs/design-brief.md`.
 - Data: one small hook `useServer<T>(path)` (fetch with the bearer header, loading and error state, refetch on tab focus and on foreground). No query library.
 - Visual direction: the thread's surface brief (Hevy palette, system fonts, cards with hairline borders, one accent). Screens ship consistent with `src/components/assistant-ui/theme.ts` tokens; impeccable polishes.
+
+## Amendment 2026-09-10 18:00: one screen, final
+
+The owner looked at Hevy Coach's client side (Client Chat, Client App) and decided the app is the client chat with an AI coach; logging and progress stay in Hevy. This replaces the 16:30 amendment: the tabs, the native onboarding, and the profile, block, progress and prefill routes are deleted.
+
+### Screen
+
+One route, `src/app/index.tsx`: large title "Coach", a grey strip from `GET /week` ("This week 2 workouts · next Day 2 Heavy Upper"), the thread, the composer. Push registration on launch; a notification tap reloads the thread. Nothing else.
+
+### Messages with choices
+
+```ts
+interface Choice { label: string; value: string }
+interface Message { id; role; text; createdAt; kind?: 'plan' | 'review'; choices?: Choice[]; multi?: boolean }
+```
+The app renders `choices` as pills under the last assistant message when no user message follows it. Single: tapping sends `{ text: label, choice: value }`. Multi: pills toggle, a "Done" pill sends `{ text: labels joined by ", ", choice: values[] }`. Typing is always allowed. `POST /messages` body is `{ text: string; choice?: string | string[] }`.
+
+### Profile (reduced)
+
+```ts
+interface Profile { goals: Goal[]; daysPerWeek: number; bodyweightKg: number; injuries: Injury[]; notes: string; equipment: Equipment; sessionMinutes: number; yearsTraining: YearsTraining }
+```
+Equipment, session length and years training come from the history (the former prefill logic, now internal) with defaults full_gym, 60, '<1'. No sex, age, height, training style or cardio.
+
+### Intake script (`server/src/intake.ts`)
+
+State: `state.intake: { step: IntakeStep; answers: Partial<Profile> } | null`. Steps, one message each, with choices:
+1. `goals` (multi): "What are you training for?" — Muscle, Strength, Fat loss, Longevity, Athletic performance.
+2. `daysPerWeek` (single): "How many days a week?" — 2, 3, 4, 5, 6.
+3. `injuries` (multi): "Anything to work around?" — Knee, Shoulder, Lower back, Elbow or wrist, Hip, Other, Nothing (Nothing clears the rest).
+4. `bodyweight` (single): "Hevy has you at 82 kg. Still right?" — "Yes, 82 kg" / "It changed" (then: "What is it now?" typed number).
+`GET /messages` on an empty thread with no profile appends the opener (one line of welcome plus question 1) so the app never invents the first message. A choice reply is parsed directly; a typed reply during intake goes through a small `CHAT_MODEL` call with a JSON-schema output that maps it to the step's field or reports `unclear`, in which case the coach re-asks in one line. After step 4: save the profile, run `createProgram` (unchanged, Opus, guard), and post the plan message whose last line names the routines: "Open Hevy → Routines → HevyCoach: Day 1 - Heavy Lower, Day 2 - Heavy Upper, …". Typed messages that are not intake answers during intake are answered briefly by the coach and the current question is repeated with its choices.
+
+### Review after a workout (replaces the verdict)
+
+Output schema `{ message, memory, proposal: { session: string, summary: string, exercises: Exercise[] } | null }`. The message is the review (what went well, what to push next week, what the coach proposes to change, one question). When `proposal` is non-null the message carries choices `[{ label: 'Apply changes', value: 'apply' }, { label: 'Keep as is', value: 'keep' }]` and `state.pendingProposal = { sessionIndex, exercises, messageId }` is saved. Push: title "Review of your workout is ready", body = the message's first line. Reply handling: choice `apply` → guard-check the proposed exercises (checkBlock on a one-session block) → `PUT` that routine via `writeRoutines` for that session → update `state.block` → post "Updated Day 2 - Heavy Upper in Hevy." Choice `keep` → clear the proposal, post "Kept as is." A typed reply goes to the chat model with two extra tools, `apply_proposal` and `discard_proposal` (no arguments), and the pending proposal in the context block, so "yes do it" applies and "no" discards. Nothing in Hevy changes without one of these.
+
+### Routes (bearer-protected except /health and the webhook)
+
+GET /health · GET /messages · POST /messages · POST /device · POST /webhook/hevy · GET /week → `{ workoutsThisWeek, lastWorkout: { title, at } | null, nextSession: string | null }` (this week since Monday local from the last 30 workouts; next session from the block and the last matched routine id).
+
+### Deleted
+
+App: `(tabs)/`, `onboarding/`, `profile/`, plan, progress, profile components, onboarding components, `lib/onboarding-*`, `lib/options.ts`, ui primitives. Server: `/profile`, `/prefill`, `/block`, `/progress` routes and their views (keep the prefill derivation as an internal helper for the intake defaults), `validateProfile` for the old shape.

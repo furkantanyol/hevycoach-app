@@ -33,7 +33,7 @@ Success: the demo loop runs end to end on 2026-09-11 (chat → plan → routines
 ## Operating Context
 
 - **Hevy keeps the set and the routine.** During a session the user is in Hevy, following a routine the coach wrote into the "HevyCoach" folder. The thread is never consulted between sets and never shows the next target; it is the conversation around the training, not the training.
-- **The app has four tabs** (Coach, Plan, Progress, Profile) and a native onboarding flow, decided 2026-09-10 16:30 after the thread alone read as thin. It stores nothing; every tab reads the server. Verdicts written while the app was closed appear when it comes to the foreground.
+- **The app is one screen**: the chat with the coach under a one-line week strip from Hevy, plus push notifications (decided 2026-09-10 18:00 after looking at Hevy Coach's client side: this is the client chat, with an AI coach). It stores nothing. Routines are viewed in Hevy, never here.
 - **Push is the front door.** A verdict push carries the session name as title and the message as body (truncated to ~170 characters). Tapping it opens the thread.
 - **The coach is a small Fastify server** the owner runs locally, reachable through a Cloudflare Tunnel at `coach.furkantanyol.com`, state in one JSON file. Runs on the owner's Mac for the demo, on a Hetzner box afterwards.
 - **Reference implementation of the mechanics**: the owner's Telegram coach `furkan-ai` on a VPS (`docs/research/furkan-ai-coaching-mechanics.md`) and the methodology in `hevy-coach/prompts/COACH.md`.
@@ -42,7 +42,7 @@ Success: the demo loop runs end to end on 2026-09-11 (chat → plan → routines
 
 Confirmed (`docs/spec.md`, approved 2026-09-10):
 
-- The thread streams the coach's reply. History loads on mount and on foreground. Intake is a native onboarding flow of six steps with selectable options, prefilled from Hevy wherever the history answers (bodyweight, days per week, session length, years training, equipment); the chat is for questions and changes.
+- The thread streams the coach's reply. History loads on mount and on foreground. Intake happens in the chat as four scripted questions with tappable options (typing allowed); the coach then writes the block into Hevy and names the routines to open. After every workout the coach posts a review with a proposed routine change and "Apply changes" / "Keep as is" pills; nothing in Hevy changes without the user's yes.
 - `create_program` is the only write. Routines go into the "HevyCoach" folder of the owner's account and nowhere else; existing routines outside it are never touched.
 - Scope: training, recovery, mobility, and nutrition as it relates to training. Anything else gets one line declining and a redirect.
 - Safety: pain or injury → ask where, when, how bad, then program conservatively. Red flags → tell them to see a professional. No diagnoses.

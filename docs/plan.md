@@ -32,12 +32,19 @@ Interview: Friday 2026-09-11 16:00 (Europe/Madrid). Each step ends in a demoable
 - [ ] First push-capable build tonight: `pnpm ios:build` (interactive Apple sign-in, answer yes to push setup), `pnpm ios:install`.
 - [ ] Rehearse the loop on the phone: chat → plan → workout → push → reply.
 
-## Step 2b — four tabs and structured onboarding (2026-09-10 16:30, owner decision)
+## Step 2b — four tabs and structured onboarding (2026-09-10 16:30) — SUPERSEDED at 18:00, deleted
 
 - [ ] Server: new Profile shape with option lists; GET /prefill, GET/PUT /profile, GET /block, GET /progress; tool schema and context updated; tests.
 - [ ] App: Coach, Plan, Progress, Profile tabs; onboarding stack of six steps with prefill from Hevy; `useServer` hook; notification tap opens Coach.
 - [ ] Simulator: onboarding → block → all four tabs on real data; screenshots sent to the owner.
 - [ ] Impeccable polish pass on the new surfaces in the owner's session.
+
+## Step 2c — one screen, final (2026-09-10 18:00, owner decision after reviewing Hevy Coach's client side)
+
+- [ ] Server: reduced Profile, scripted intake with choices, review with proposal and Apply/Keep, GET /week; old routes deleted; tests.
+- [ ] App: one screen with the week strip, pills under coach messages, tabs and onboarding deleted.
+- [ ] Simulator: intake with pills → plan → replayed workout → review → apply; screenshots to the owner.
+- [ ] Owner: device build tonight; one real workout for the delivery contract.
 
 ## Step 3 — polish and narrative (2026-09-11 morning)
 
