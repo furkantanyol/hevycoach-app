@@ -16,10 +16,14 @@
   },
   "dependencies": {
     "@assistant-ui/react-native": "^0.1.40",
+    "@expo/ui": "~57.0.17",
+    "@ronradtke/react-native-markdown-display": "^9.0.3",
     "assistant-cloud": "^0.1.43",
     "expo": "~57.0.21",
     "expo-constants": "~57.0.17",
     "expo-dev-client": "~57.0.18",
+    "expo-glass-effect": "~57.0.2",
+    "expo-linear-gradient": "~57.0.1",
     "expo-linking": "~57.0.9",
     "expo-notifications": "~57.0.17",
     "expo-router": "~57.0.20",
@@ -27,6 +31,7 @@
     "expo-updates": "~57.0.21",
     "react": "19.2.3",
     "react-native": "0.86.3",
+    "react-native-pager-view": "8.0.2",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "~4.26.0"
   },
