@@ -10,7 +10,7 @@ import { MEMORY_MAX_CHARACTERS, NO_TARGETS, reviewTask } from './review-prompt.j
 import type { Block, Choice, Exercise, Message, PendingProposal, Session, State } from './state.js';
 import { appended, type MessageExtras, newMessage } from './thread.js';
 
-export { createProgram, programInput, type ProgramInput } from './plan.js';
+export { createProgram, programInput, runProgram, type Program, type ProgramInput } from './plan.js';
 
 const MAX_TOOL_ROUNDS = 3;
 /** The proxy in front of the server closes a streamed response after ~100 s of silence; a plan call takes longer than that. */

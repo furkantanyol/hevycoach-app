@@ -139,10 +139,15 @@ export const last = (deps: CoachDeps) => deps.state.messages.at(-1);
 export const tap = (deps: CoachDeps, text: string, choice: string | string[]) => handleIntakeReply(deps, text, choice);
 export const typed = (deps: CoachDeps, text: string) => handleIntakeReply(deps, text, undefined);
 
-/** Answers goals, days and injuries with pills, leaving the script on the bodyweight question. */
-export async function toBodyweight(deps: CoachDeps): Promise<void> {
+/** Answers goals and days with pills, leaving the script on the injuries question. */
+export async function toInjuries(deps: CoachDeps): Promise<void> {
   await ensureOpener(deps);
   await tap(deps, 'Muscle', ['muscle']);
   await tap(deps, '4', '4');
+}
+
+/** The same, plus a tapped "Nothing", leaving the script on the bodyweight question. */
+export async function toBodyweight(deps: CoachDeps): Promise<void> {
+  await toInjuries(deps);
   await tap(deps, 'Nothing', ['nothing']);
 }

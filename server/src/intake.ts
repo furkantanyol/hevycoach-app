@@ -1,4 +1,4 @@
-import { type CoachDeps, createProgram } from './coach.js';
+import { type CoachDeps, runProgram } from './coach.js';
 import { type Prefill, prefillFrom, PREFILL_WORKOUTS } from './derived.js';
 import { historySummary, recentWorkouts } from './hevy.js';
 import { type Answer, answerOf, CHANGED, DAYS_PER_WEEK, interpret, NOTHING, YES } from './intake-answer.js';
@@ -11,6 +11,8 @@ const PLAN_FAILED = 'I could not write your block into Hevy just then. Ask me to
 const UNCLEAR = 'I did not catch that. ';
 const OPENER_FAILED = 'intake opener: could not read the Hevy history';
 const PLAN_LOG_FAILED = 'intake plan failed';
+/** The athlete's own words are kept whole up to here; the plan prompt reads them as untrusted text. */
+const NOTES_MAX = 1000;
 
 /** What the history cannot answer, from the amendment: full gym, an hour, and a beginner's history. */
 const DEFAULTS = { equipment: 'full_gym', sessionMinutes: 60, yearsTraining: '<1' } as const;
@@ -149,9 +151,9 @@ async function complete(turn: Turn, answers: Partial<Profile>): Promise<void> {
   await deps.save();
 
   try {
-    const written = await createProgram(deps, { profile, reason: INITIAL_REASON });
-    const names = (deps.state.block?.sessions ?? []).map((session) => session.name).join(', ');
-    deps.state.messages.push(newMessage('assistant', `${written}\n\n${OPEN_IN_HEVY}${names}`, { kind: 'plan' }));
+    const { analysis, block } = await runProgram(deps, { profile, reason: INITIAL_REASON });
+    const names = block.sessions.map((session) => session.name).join(', ');
+    deps.state.messages.push(newMessage('assistant', `${analysis}\n\n${OPEN_IN_HEVY}${names}`, { kind: 'plan' }));
   } catch (error) {
     deps.log(`${PLAN_LOG_FAILED}: ${describe(error)}`);
     deps.state.messages.push(newMessage('assistant', PLAN_FAILED));
@@ -179,9 +181,16 @@ function fromChoice(turn: Turn, choice: string | string[]): Answer | null {
   return held === null ? null : { bodyweightKg: held };
 }
 
+/** The injury list drops the specifics ("no incline pressing, landmine is fine"), so the words are kept too. */
+function withNotes(answer: Answer | null, text: string): Answer | null {
+  if (answer === null || answer === CHANGED) return answer;
+  return { ...answer, notes: text.trim().slice(0, NOTES_MAX) };
+}
+
 /** The model can only repeat the held bodyweight on a typed confirmation if the request carries it. */
-function fromTyped(turn: Turn, text: string): Promise<Answer | null> {
-  return interpret(turn.deps, { step: turn.step, heldBodyweightKg: heldBodyweight(turn) }, text);
+async function fromTyped(turn: Turn, text: string): Promise<Answer | null> {
+  const answer = await interpret(turn.deps, { step: turn.step, heldBodyweightKg: heldBodyweight(turn) }, text);
+  return turn.step === 'injuries' ? withNotes(answer, text) : answer;
 }
 
 async function advance(turn: Turn, answer: Answer): Promise<void> {

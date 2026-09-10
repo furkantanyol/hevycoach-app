@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ANALYSIS, answered, BODYWEIGHT_KG, harness, hevyStub, last, PLAN_JSON, SESSION_A, SESSION_B, SESSION_MINUTES, tap, toBodyweight, typed } from './intake-harness.js';
+import { ANALYSIS, answered, BODYWEIGHT_KG, harness, hevyStub, last, PLAN_JSON, SESSION_A, SESSION_B, SESSION_MINUTES, tap, toBodyweight, toInjuries, typed } from './intake-harness.js';
 import { ensureOpener, intakeActive } from './intake.js';
 import type { Profile } from './state.js';
 
@@ -106,6 +106,15 @@ describe('a tapped answer', () => {
     expect(state.intake?.answers.injuries).toEqual([]);
   });
 
+  it('should leave the notes empty when the injuries are tapped', async () => {
+    const { deps, state } = harness();
+    await toInjuries(deps);
+
+    await tap(deps, 'Knee', ['knee']);
+
+    expect(state.intake?.answers.notes).toBeUndefined();
+  });
+
   it('should confirm the bodyweight Hevy holds', async () => {
     const { deps } = harness();
 
@@ -133,13 +142,13 @@ describe('a tapped answer', () => {
 });
 
 describe('the last answer', () => {
-  it('should write the block and end with the routines to open in Hevy', async () => {
+  it('should write the block and name the routines once, in the last line', async () => {
     const { deps } = harness([PLAN_JSON]);
     await toBodyweight(deps);
 
     await tap(deps, `Yes, ${BODYWEIGHT_KG} kg`, 'yes');
 
-    expect(last(deps)?.text).toBe(`${ANALYSIS}\n\nWritten to Hevy: Autumn block, 2 sessions — ${SESSION_A}, ${SESSION_B}.\n\n${OPEN_IN_HEVY}`);
+    expect(last(deps)?.text).toBe(`${ANALYSIS}\n\n${OPEN_IN_HEVY}`);
   });
 
   it('should mark the block message as the plan', async () => {

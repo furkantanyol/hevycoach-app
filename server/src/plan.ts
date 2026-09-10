@@ -94,7 +94,13 @@ function blockSummary(block: Block): string {
   return `Written to Hevy: ${block.name}, ${count} session${count === 1 ? '' : 's'} — ${names}.`;
 }
 
-export async function createProgram(deps: CoachDeps, input: ProgramInput): Promise<string> {
+/** The written block and the coach's words about it, for callers that name the routines themselves. */
+export interface Program {
+  analysis: string;
+  block: Block;
+}
+
+export async function runProgram(deps: CoachDeps, input: ProgramInput): Promise<Program> {
   const summary = await historySummary(deps.hevy);
   const catalogue = await templateCatalogue(deps.hevy, summary);
   const run: PlanRun = { deps, summary, catalogue, reason: input.reason };
@@ -107,7 +113,13 @@ export async function createProgram(deps: CoachDeps, input: ProgramInput): Promi
   deps.state.block = block;
   await deps.save();
 
-  return `${plan.analysis}\n\n${blockSummary(block)}`;
+  return { analysis: plan.analysis, block };
+}
+
+/** What the chat tool answers with: the analysis, then the sentence naming what was written. */
+export async function createProgram(deps: CoachDeps, input: ProgramInput): Promise<string> {
+  const { analysis, block } = await runProgram(deps, input);
+  return `${analysis}\n\n${blockSummary(block)}`;
 }
 
 /** `strict` should keep the model inside the schema; this rejects the call rather than trusting it, since the profile is written to state. */

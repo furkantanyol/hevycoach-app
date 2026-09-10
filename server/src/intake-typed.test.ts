@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { answered, BODYWEIGHT_KG, harness, hevyStub, last, PLAN_JSON, tap, toBodyweight, typed } from './intake-harness.js';
+import { answered, BODYWEIGHT_KG, harness, hevyStub, last, PLAN_JSON, tap, toBodyweight, toInjuries, typed } from './intake-harness.js';
 import { ensureOpener } from './intake.js';
 import { SYSTEM_PROMPT, USER_INPUT_CLOSE, USER_INPUT_OPEN } from './prompt.js';
 
 const UNCLEAR_JSON = JSON.stringify({ field: [], unclear: true });
+const INJURY_DETAIL = 'left shoulder: no incline pressing, landmine is fine';
+const NOTES_MAX = 1000;
 
 describe('a typed answer', () => {
   it('should map the reply onto the step the script is waiting on', async () => {
@@ -57,6 +59,34 @@ describe('a typed answer', () => {
       5,
       'goals',
     ]);
+  });
+
+  it('should keep the words of a typed injury answer in the notes', async () => {
+    const { deps, state } = harness([answered(['shoulder'])]);
+    await toInjuries(deps);
+
+    await typed(deps, `  ${INJURY_DETAIL}  `);
+
+    expect(state.intake?.answers).toEqual({ goals: ['muscle'], daysPerWeek: 4, injuries: ['shoulder'], notes: INJURY_DETAIL });
+  });
+
+  it('should carry those words into the saved profile', async () => {
+    const { deps, state } = harness([answered(['shoulder']), PLAN_JSON]);
+    await toInjuries(deps);
+    await typed(deps, INJURY_DETAIL);
+
+    await tap(deps, `Yes, ${BODYWEIGHT_KG} kg`, 'yes');
+
+    expect(state.profile?.notes).toBe(INJURY_DETAIL);
+  });
+
+  it('should cut a very long injury answer down to the notes it keeps', async () => {
+    const { deps, state } = harness([answered(['knee'])]);
+    await toInjuries(deps);
+
+    await typed(deps, 'my knee '.repeat(NOTES_MAX));
+
+    expect(state.intake?.answers.notes).toHaveLength(NOTES_MAX);
   });
 
   it('should hand the model the bodyweight Hevy holds when the confirmation is typed', async () => {
