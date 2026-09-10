@@ -14,3 +14,4 @@ The 2026-09-10 build is single-user and optimised for a working demo. These are 
 | Tunnel exposes the server to the internet | Cloudflare Access in front of the app routes; only `/webhook/hevy` public |
 | Guard bounds numbers but trusts template ids from the catalogue | Validate every write against the live template list before the call |
 | Model output is trusted as the message text | Strip markdown/HTML, cap length, never render links |
+| The first webhook delivery is logged in full to record Hevy's contract, with the Authorization header redacted | Drop the first-delivery log entirely once `docs/hevy-webhook-delivery.md` exists |

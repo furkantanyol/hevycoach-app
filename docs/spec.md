@@ -43,7 +43,7 @@ Node 24, TypeScript strict, ESM. Fastify 5, `@anthropic-ai/sdk`, `@furkantanyol/
 
 ### Env (`server/.env`, gitignored; `server/.env.example` committed)
 
-`HEVY_API_KEY`, `ANTHROPIC_API_KEY`, `APP_TOKEN` (random, shared with the app), `WEBHOOK_SECRET` (random, sent to Hevy as the subscription authToken), `PUBLIC_URL` (`https://coach.furkantanyol.com`), `PORT=3001`, optional `PLAN_MODEL` (default `claude-opus-5`) and `CHAT_MODEL` (default `claude-sonnet-5`), optional `CLOUDFLARE_TUNNEL_TOKEN` for the `tunnel` script.
+`HEVY_API_KEY`, `ANTHROPIC_API_KEY`, `APP_TOKEN` (random, shared with the app), `WEBHOOK_SECRET` (random, sent to Hevy as the subscription authToken), `PUBLIC_URL` (`https://coach.furkantanyol.com`), `PORT=3001`, optional `PLAN_MODEL` (default `claude-opus-5`) and `CHAT_MODEL` (default `claude-sonnet-5`), optional `LOG_LEVEL` (default `info`) for the Fastify logger, optional `CLOUDFLARE_TUNNEL_TOKEN` for the `tunnel` script.
 
 ### State (`server/data/state.json`)
 
@@ -52,7 +52,7 @@ interface State {
   profile: Profile | null;   // goal, daysPerWeek, experience, equipment, constraints, notes — from intake
   block: Block | null;       // name, weeks, sessions[{ name, focus, hevyRoutineId, exercises[{ templateId, title, sets, reps, weightKg, rpe, note }] }], createdAt, reason
   memory: string;            // rolling coach memory, rewritten at each verdict, kept under ~1500 characters
-  messages: Message[];       // { id, role: 'user' | 'assistant', text, createdAt, kind?: 'plan' | 'verdict' }
+  messages: Message[];       // { id, role: 'user' | 'assistant', text, createdAt, kind?: 'plan' | 'verdict', block?: Block (snapshot, on plan messages), session?: string (session name, on verdict messages) }
   pushToken: string | null;
   seenEvents: string[];      // webhook event ids, newest last, capped at 200
 }
@@ -66,12 +66,12 @@ App routes require `Authorization: Bearer <APP_TOKEN>`; a wrong or missing token
 | Route | Request | Response |
 |---|---|---|
 | GET /health | — | `{ ok: true }` (no auth) |
-| GET /messages | — | `Message[]` |
+| GET /messages | — | `Message[]`; the app maps each to an assistant-ui message with `metadata.custom = { kind, block, session }` so the thread can render plan cards and verdict captions |
 | POST /messages | `{ text }` | `text/plain` streamed chunks of the assistant reply; both messages appended to state when done |
 | POST /device | `{ expoPushToken }` | 204 |
 | POST /webhook/hevy | Hevy delivery `{ id, payload: { workoutId } }`, bearer = `WEBHOOK_SECRET` | `{ recorded, notified }` |
 
-Webhook rules: compare the token from `Authorization` (with or without `Bearer `) against `WEBHOOK_SECRET`; wrong token is 401; a body that is not `{ id, payload: { workoutId } }` is 400; an event id already in `seenEvents` returns `{ recorded: false }` and does nothing; the first delivery ever received logs its headers and body shape to `docs/hevy-webhook-delivery.md` so the real contract is recorded (the probe never exercised delivery). Reply 200 quickly and do the verdict work after replying.
+Webhook rules: compare the token from `Authorization` (with or without `Bearer `) against `WEBHOOK_SECRET`; wrong token is 401; a body without a string `id` and a string `payload.workoutId` is 400 (extra keys are tolerated until the real delivery shape is recorded); an event id already in `seenEvents` returns `{ recorded: false }` and does nothing; the first delivery ever received is logged in full (headers and body) so the real contract can be recorded in `docs/hevy-webhook-delivery.md` (the probe never exercised delivery). Reply 200 quickly and do the verdict work after replying.
 
 At boot the server calls `client.webhook.set({ url: PUBLIC_URL + '/webhook/hevy', authToken: WEBHOOK_SECRET })` and logs the result. One subscription per key; this replaces whatever was there.
 
@@ -79,7 +79,7 @@ At boot the server calls `client.webhook.set({ url: PUBLIC_URL + '/webhook/hevy'
 
 Models: `PLAN_MODEL` for `create_program`, `CHAT_MODEL` for chat turns and verdicts. Load the `claude-api` skill before writing any Anthropic call.
 
-Every model call gets: the system prompt, then a context block with `memory`, `profile`, a compact block summary, and the last 30 messages. All user-written text is wrapped in the untrusted delimiters `<<<UNTRUSTED_USER_INPUT>>> … <<<END_UNTRUSTED_USER_INPUT>>>`; occurrences of the delimiters inside user text are replaced by `[redacted delimiter]`.
+Every model call gets: the system prompt as a cached stable block, then a context block with `memory`, `profile` and the current block with its targets, then the last 30 messages; plan and verdict calls append their task as the final user message. All user-written text is wrapped in the untrusted delimiters `<<<UNTRUSTED_USER_INPUT>>> … <<<END_UNTRUSTED_USER_INPUT>>>`; occurrences of the delimiters inside user text are replaced by `[redacted delimiter]`.
 
 System prompt (`server/src/prompt.ts`), one string, sections:
 1. Identity: the user's strength coach, on top of Hevy, which stays the logger.

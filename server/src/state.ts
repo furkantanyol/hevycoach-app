@@ -42,6 +42,10 @@ export interface Message {
   text: string;
   createdAt: string;
   kind?: 'plan' | 'verdict';
+  /** Snapshot of the block this turn wrote; set on plan messages. */
+  block?: Block;
+  /** Name of the block session the workout matched; set on verdict messages. */
+  session?: string;
 }
 
 export interface State {
