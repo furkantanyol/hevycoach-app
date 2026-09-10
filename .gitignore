@@ -54,3 +54,6 @@ server/data/
 # impeccable session artifacts
 .impeccable/questions/
 .impeccable/review/
+
+# Hevy reference screenshots (personal photos)
+docs/IMG_*.PNG

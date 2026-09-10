@@ -7,10 +7,10 @@ Interview: Friday 2026-09-11 16:00 (Europe/Madrid). Each step ends in a demoable
 - [x] hevy-coach: delete the stray `supabase/.temp`; `pnpm validate` green (42 tests).
 - [x] Strip the app: screens, features, components, health module, Supabase backend, old ADRs, PRODUCT.md, DESIGN.md.
 - [x] Docs: state-of-play, research notes, spec, plan, reset ADR, security-next, CLAUDE.md, agents.
-- [ ] App skeleton: trimmed package.json, app.json without HealthKit/Sentry/sqlite and with `expo-notifications`, Metro without Sentry, ESLint/tsconfig without the Supabase excludes, `src/app/_layout.tsx` + `index.tsx` placeholder.
-- [ ] Server skeleton: `server/` package with Fastify, `/health`, state file, env loading, vitest, `.env.example`, Dockerfile, compose.
-- [ ] Root `pnpm validate` green for both packages. Commit.
-- [ ] Owner runs `/impeccable init`.
+- [x] App skeleton: trimmed package.json, app.json without HealthKit/Sentry/sqlite and with `expo-notifications`, Metro without Sentry, ESLint/tsconfig without the Supabase excludes, `src/app/_layout.tsx` + `index.tsx` placeholder.
+- [x] Server skeleton: `server/` package with Fastify, `/health`, state file, env loading, vitest, `.env.example`, Dockerfile, compose.
+- [x] Root `pnpm validate` green for both packages. Committed (f370c9c, b3c6615, 6650442).
+- [x] Owner runs `/impeccable init` (PRODUCT.md at the repo root).
 
 ## Step 1 — server (afternoon)
 
