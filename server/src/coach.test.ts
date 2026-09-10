@@ -27,12 +27,11 @@ const SESSION_A = 'Lower A';
 const SESSION_B = 'Lower B';
 
 const PROFILE: Profile = {
-  goal: 'get stronger',
-  daysPerWeek: 3,
-  experience: 'intermediate',
-  equipment: 'full gym',
-  constraints: '',
-  notes: '',
+  sex: 'male', age: 34, heightCm: 180, bodyweightKg: 82,
+  primaryGoal: 'strength', secondaryGoal: 'muscle',
+  daysPerWeek: 3, sessionMinutes: 60, yearsTraining: '3-5',
+  equipment: 'full_gym', trainingStyle: 'hybrid', cardio: 'none',
+  injuries: [], notes: '',
 };
 
 const said = (role: Message['role'], text: string): Message => ({

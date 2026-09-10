@@ -2,6 +2,8 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import type { IncomingHttpHeaders } from 'node:http';
 import Fastify, { type FastifyBaseLogger, type FastifyInstance, type FastifyReply, type FastifyServerOptions } from 'fastify';
 import { chatTurn, type CoachDeps, verdict } from './coach.js';
+import { blockView, cacheFor, PREFILL_WORKOUTS, prefillFrom, progressView, RECENT_WORKOUTS, SUMMARY_TTL_MS, validateProfile } from './derived.js';
+import { historySummary, recentWorkouts } from './hevy.js';
 import { sendPush } from './push.js';
 import type { State } from './state.js';
 
@@ -9,6 +11,10 @@ const HEALTH_PATH = '/health';
 const WEBHOOK_PATH = '/webhook/hevy';
 const MESSAGES_PATH = '/messages';
 const DEVICE_PATH = '/device';
+const PREFILL_PATH = '/prefill';
+const PROFILE_PATH = '/profile';
+const BLOCK_PATH = '/block';
+const PROGRESS_PATH = '/progress';
 
 const OK = 200;
 const NO_CONTENT = 204;
@@ -41,10 +47,11 @@ export interface RouteDeps {
   appToken?: string;
   webhookSecret?: string;
   pushToken: () => string | null;
-  /** Test seams: the routes call the real coach and their own logger unless these are supplied. */
+  /** Test seams: the routes call the real coach, clock and logger unless these are supplied. */
   turn?: typeof chatTurn;
   judge?: typeof verdict;
   logger?: FastifyBaseLogger;
+  now?: () => number;
 }
 
 interface Delivery {
@@ -188,6 +195,34 @@ function appRoutes(app: FastifyInstance, deps: RouteDeps): void {
   });
 }
 
+/** The summary walks every workout page, so /prefill and /progress share one cached read. */
+function dataRoutes(app: FastifyInstance, deps: RouteDeps): void {
+  const { hevy } = deps.coach;
+  const summary = cacheFor(SUMMARY_TTL_MS, () => historySummary(hevy), deps.now);
+
+  app.get(PREFILL_PATH, async () =>
+    prefillFrom(await summary(), await recentWorkouts(hevy, PREFILL_WORKOUTS)),
+  );
+
+  app.get(PROFILE_PATH, async () => ({ profile: deps.state.profile }));
+
+  app.put(PROFILE_PATH, async (request, reply) => {
+    const result = validateProfile(request.body);
+    if ('error' in result) return reply.code(BAD_REQUEST).send({ error: result.error });
+    deps.state.profile = result.profile;
+    await deps.save();
+    return { profile: result.profile };
+  });
+
+  app.get(BLOCK_PATH, async () =>
+    blockView(deps.state.block, await recentWorkouts(hevy, RECENT_WORKOUTS), deps.state.messages),
+  );
+
+  app.get(PROGRESS_PATH, async () =>
+    progressView(await summary(), await recentWorkouts(hevy, RECENT_WORKOUTS)),
+  );
+}
+
 function webhookRoute(app: FastifyInstance, deps: RouteDeps): void {
   app.post(WEBHOOK_PATH, async (request, reply) => {
     const { webhookSecret } = deps;
@@ -231,6 +266,7 @@ export function buildApp(deps: RouteDeps): FastifyInstance {
 
   appTokenHook(app, deps.appToken);
   appRoutes(app, deps);
+  dataRoutes(app, deps);
   webhookRoute(app, deps);
 
   return app;

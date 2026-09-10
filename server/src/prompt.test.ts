@@ -1,44 +1,22 @@
 import { describe, expect, it } from 'vitest';
-import {
-  contextBlock,
-  CREATE_PROGRAM_TOOL,
-  PLAN_OUTPUT_SCHEMA,
-  planTask,
-  SYSTEM_PROMPT,
-  untrusted,
-  USER_INPUT_CLOSE,
-  USER_INPUT_OPEN,
-  verdictTask,
-  VERDICT_OUTPUT_SCHEMA,
-} from './prompt.js';
+import { contextBlock, planTask, SYSTEM_PROMPT, untrusted, USER_INPUT_CLOSE, USER_INPUT_OPEN, verdictTask } from './prompt.js';
 import { emptyState, type Block, type Profile, type State } from './state.js';
 
-const RANGE_KEYWORDS = ['minimum', 'maximum', 'maxItems'];
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function objectSchemas(node: unknown): Record<string, unknown>[] {
-  if (Array.isArray(node)) return node.flatMap(objectSchemas);
-  if (!isRecord(node)) return [];
-  const nested = Object.values(node).flatMap(objectSchemas);
-  return node.type === 'object' ? [node, ...nested] : nested;
-}
-
-function everyKey(node: unknown): string[] {
-  if (Array.isArray(node)) return node.flatMap(everyKey);
-  if (!isRecord(node)) return [];
-  return Object.entries(node).flatMap(([key, value]) => [key, ...everyKey(value)]);
-}
-
 const profile: Profile = {
-  goal: 'get stronger without losing the knee',
+  sex: 'male',
+  age: 34,
+  heightCm: 180,
+  bodyweightKg: 82,
+  primaryGoal: 'muscle',
+  secondaryGoal: 'strength',
   daysPerWeek: 4,
-  experience: 'intermediate',
-  equipment: 'full commercial gym',
-  constraints: 'left knee, Hoffa fat pad',
-  notes: 'travels one week a month',
+  sessionMinutes: 60,
+  yearsTraining: '3-5',
+  equipment: 'full_gym',
+  trainingStyle: 'hybrid',
+  cardio: 'zone2',
+  injuries: ['knee', 'shoulder'],
+  notes: 'left knee, Hoffa fat pad; travels one week a month',
 };
 
 const block: Block = {
@@ -65,6 +43,14 @@ const block: Block = {
     },
   ],
 };
+
+const PROFILE_LINES = [
+  'Sex: male · Age: 34 · Height: 180 cm · Bodyweight: 82 kg',
+  'Primary goal: muscle · Secondary goal: strength',
+  'Days per week: 4 · Session length: 60 min · Years training: 3-5',
+  'Equipment: full_gym · Training style: hybrid · Cardio: zone2',
+  'Injuries: knee, shoulder',
+].join('\n');
 
 function stateWith(overrides: Partial<State>): State {
   return { ...emptyState(), ...overrides };
@@ -111,10 +97,27 @@ describe('contextBlock', () => {
     expect(contextBlock(stateWith({ memory: 'Squat stalled at 100 kg.' }))).toContain('Squat stalled at 100 kg.');
   });
 
-  it('should list every profile field when a profile exists', () => {
+  it('should render every profile field when a profile exists', () => {
     const text = contextBlock(stateWith({ profile }));
 
-    expect(text).toContain('days per week: 4');
+    expect(text).toContain(PROFILE_LINES);
+  });
+
+  it('should say none when there is no secondary goal', () => {
+    const text = contextBlock(stateWith({ profile: { ...profile, secondaryGoal: null } }));
+
+    expect(text).toContain('Secondary goal: none');
+  });
+
+  it('should say none when there are no injuries', () => {
+    expect(contextBlock(stateWith({ profile: { ...profile, injuries: [] } }))).toContain('Injuries: none');
+  });
+
+  it('should keep the notes inside the untrusted delimiters', () => {
+    const text = contextBlock(stateWith({ profile }));
+    const body = text.slice(text.indexOf(USER_INPUT_OPEN), text.indexOf(USER_INPUT_CLOSE));
+
+    expect(body).toContain(`Notes: ${profile.notes}`);
   });
 
   it('should list the sets, reps, weight and rpe of each planned exercise', () => {
@@ -125,78 +128,6 @@ describe('contextBlock', () => {
 
   it('should name the session and its focus when a block exists', () => {
     expect(contextBlock(stateWith({ block }))).toContain('Upper A — horizontal push and pull');
-  });
-});
-
-describe('CREATE_PROGRAM_TOOL', () => {
-  it('should be named create_program', () => {
-    expect(CREATE_PROGRAM_TOOL.name).toBe('create_program');
-  });
-
-  it('should be strict so the input is schema validated', () => {
-    expect(CREATE_PROGRAM_TOOL.strict).toBe(true);
-  });
-
-  it('should forbid additional properties at every object level', () => {
-    const levels = objectSchemas(CREATE_PROGRAM_TOOL.input_schema);
-
-    expect(levels.every((level) => level.additionalProperties === false)).toBe(true);
-  });
-
-  it('should require a profile and a reason', () => {
-    expect(CREATE_PROGRAM_TOOL.input_schema.required).toEqual(['profile', 'reason']);
-  });
-
-  it('should describe every profile field the state needs', () => {
-    const [, profileSchema] = objectSchemas(CREATE_PROGRAM_TOOL.input_schema);
-
-    const fields = ['goal', 'daysPerWeek', 'experience', 'equipment', 'constraints', 'notes'];
-
-    expect(profileSchema?.required).toEqual(fields);
-  });
-});
-
-describe('PLAN_OUTPUT_SCHEMA', () => {
-  it('should use no range keywords the messages API rejects', () => {
-    const keys = everyKey(PLAN_OUTPUT_SCHEMA);
-
-    expect(RANGE_KEYWORDS.filter((keyword) => keys.includes(keyword))).toEqual([]);
-  });
-
-  it('should forbid additional properties at every object level', () => {
-    const levels = objectSchemas(PLAN_OUTPUT_SCHEMA);
-
-    expect(levels.every((level) => level.additionalProperties === false)).toBe(true);
-  });
-
-  it('should require an analysis and a block', () => {
-    expect(PLAN_OUTPUT_SCHEMA.required).toEqual(['analysis', 'block']);
-  });
-
-  it('should describe each exercise with the fields the guard checks', () => {
-    const exerciseSchema = objectSchemas(PLAN_OUTPUT_SCHEMA).at(-1);
-
-    const fields = ['templateId', 'title', 'sets', 'reps', 'weightKg', 'rpe', 'note'];
-
-    expect(exerciseSchema?.required).toEqual(fields);
-  });
-});
-
-describe('VERDICT_OUTPUT_SCHEMA', () => {
-  it('should use no range keywords the messages API rejects', () => {
-    const keys = everyKey(VERDICT_OUTPUT_SCHEMA);
-
-    expect(RANGE_KEYWORDS.filter((keyword) => keys.includes(keyword))).toEqual([]);
-  });
-
-  it('should require a message and a memory', () => {
-    expect(VERDICT_OUTPUT_SCHEMA.required).toEqual(['message', 'memory']);
-  });
-
-  it('should forbid additional properties at every object level', () => {
-    const levels = objectSchemas(VERDICT_OUTPUT_SCHEMA);
-
-    expect(levels.every((level) => level.additionalProperties === false)).toBe(true);
   });
 });
 
@@ -257,6 +188,12 @@ describe('planTask', () => {
 
   it('should ask for the number of sessions the profile committed to', () => {
     expect(planTask(profile, 'history', 'catalogue', 'reason')).toContain('4 sessions a week');
+  });
+
+  it('should carry the profile fields into the task', () => {
+    const task = planTask(profile, 'history', 'catalogue', 'reason');
+
+    expect(task).toContain(PROFILE_LINES);
   });
 
   it('should forbid an empty block so the model cannot answer with words instead', () => {

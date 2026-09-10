@@ -34,12 +34,11 @@ const DOTS_IN_A_SLOW_PLAN = 2;
 const said = (text: string): Message => ({ id: 'm-1', role: 'user', text, createdAt: '2026-09-10T10:00:00.000Z' });
 
 const PROFILE: Profile = {
-  goal: 'get stronger',
-  daysPerWeek: 3,
-  experience: 'intermediate',
-  equipment: 'full gym',
-  constraints: '',
-  notes: '',
+  sex: 'male', age: 34, heightCm: 180, bodyweightKg: 82,
+  primaryGoal: 'strength', secondaryGoal: 'muscle',
+  daysPerWeek: 3, sessionMinutes: 60, yearsTraining: '3-5',
+  equipment: 'full_gym', trainingStyle: 'hybrid', cardio: 'none',
+  injuries: [], notes: '',
 };
 
 const BLOCK: Block = {

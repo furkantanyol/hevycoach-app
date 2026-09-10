@@ -1,4 +1,4 @@
-import type { ExerciseTemplate, HevyClient, Workout, WorkoutExercise, WorkoutSet } from '@furkantanyol/hevy-client';
+import { type ExerciseTemplate, type HevyClient, MAX_PAGE_SIZE, type Workout, type WorkoutExercise, type WorkoutSet } from '@furkantanyol/hevy-client';
 import type { Block, Exercise, Session } from './state.js';
 
 export interface ExerciseHistory {
@@ -153,6 +153,18 @@ export async function historySummary(client: HevyClient): Promise<HistorySummary
     latestBodyweightKg: await latestBodyweight(client),
     exercises: rank(totalsById),
   };
+}
+
+/** Hevy pages the workout list newest first; the sort makes that the guarantee this returns. */
+export async function recentWorkouts(client: HevyClient, limit: number): Promise<Workout[]> {
+  const collected: Workout[] = [];
+  for (let page = 1; collected.length < limit; page++) {
+    const result = await client.workouts.list({ page, pageSize: MAX_PAGE_SIZE });
+    collected.push(...result.workouts);
+    if (page >= result.page_count) break;
+  }
+  collected.sort((a, b) => Date.parse(b.start_time) - Date.parse(a.start_time));
+  return collected.slice(0, limit);
 }
 
 function exerciseLine(exercise: ExerciseHistory): string {

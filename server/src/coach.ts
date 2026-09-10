@@ -6,7 +6,7 @@ import { findSession, formatCatalogue, formatHistory, formatWorkout, type Histor
 import { CREATE_PROGRAM_TOOL, MEMORY_MAX_CHARACTERS, NO_TARGETS, planTask, verdictTask } from './prompt.js';
 import { PUSH_BODY_MAX } from './push.js';
 import { chatRequest, planRequest, toAnthropicMessages, verdictRequest } from './requests.js';
-import type { Block, Exercise, Message, Profile, Session, State } from './state.js';
+import { isProfile, type Block, type Exercise, type Message, type Profile, type Session, type State } from './state.js';
 
 export const MAX_TOOL_ROUNDS = 3;
 /** The proxy in front of the server closes a streamed response after ~100 s of silence; a plan call takes longer than that. */
@@ -162,12 +162,13 @@ export async function createProgram(deps: CoachDeps, input: ProgramInput): Promi
   return `${plan.analysis}\n\n${blockSummary(block)}`;
 }
 
-function programInput(input: unknown): ProgramInput | null {
+/** `strict` should keep the model inside the schema; this rejects the call rather than trusting it, since the profile is written to state. */
+export function programInput(input: unknown): ProgramInput | null {
   if (typeof input !== 'object' || input === null) return null;
   const { profile, reason } = input as { profile?: unknown; reason?: unknown };
   if (typeof reason !== 'string') return null;
-  if (typeof profile !== 'object' || profile === null) return null;
-  return { profile: profile as Profile, reason };
+  if (!isProfile(profile)) return null;
+  return { profile, reason };
 }
 
 function toolResult(id: string, content: string, isError?: true): Anthropic.ToolResultBlockParam {

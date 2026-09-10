@@ -2,13 +2,86 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+export const SEXES = ['male', 'female', 'other'] as const;
+export const GOALS = ['muscle', 'strength', 'both', 'fat_loss', 'longevity', 'athletic'] as const;
+export const YEARS_TRAINING = ['<1', '1-3', '3-5', '5+'] as const;
+export const EQUIPMENT = ['full_gym', 'home_gym', 'dumbbells', 'bodyweight'] as const;
+export const TRAINING_STYLES = ['powerlifting', 'bodybuilding', 'hybrid', 'athletic'] as const;
+export const CARDIO = ['none', 'zone2', 'hiit', 'both'] as const;
+export const INJURIES = ['knee', 'shoulder', 'lower_back', 'elbow_wrist', 'hip', 'other'] as const;
+
+export type Sex = (typeof SEXES)[number];
+export type Goal = (typeof GOALS)[number];
+export type YearsTraining = (typeof YEARS_TRAINING)[number];
+export type Equipment = (typeof EQUIPMENT)[number];
+export type TrainingStyle = (typeof TRAINING_STYLES)[number];
+export type Cardio = (typeof CARDIO)[number];
+export type Injury = (typeof INJURIES)[number];
+
 export interface Profile {
-  goal: string;
+  sex: Sex;
+  age: number;
+  heightCm: number;
+  bodyweightKg: number;
+  primaryGoal: Goal;
+  secondaryGoal: Goal | null;
   daysPerWeek: number;
-  experience: string;
-  equipment: string;
-  constraints: string;
+  sessionMinutes: number;
+  yearsTraining: YearsTraining;
+  equipment: Equipment;
+  trainingStyle: TrainingStyle;
+  cardio: Cardio;
+  injuries: Injury[];
+  /** Free text for injury detail and anything else the athlete wrote: untrusted. */
   notes: string;
+}
+
+/** Every profile field, in onboarding order; the tool schema and the validators read it so the three cannot drift. */
+export const PROFILE_KEYS = [
+  'sex',
+  'age',
+  'heightCm',
+  'bodyweightKg',
+  'primaryGoal',
+  'secondaryGoal',
+  'daysPerWeek',
+  'sessionMinutes',
+  'yearsTraining',
+  'equipment',
+  'trainingStyle',
+  'cardio',
+  'injuries',
+  'notes',
+] as const satisfies readonly (keyof Profile)[];
+
+function isOption<T extends string>(options: readonly T[], value: unknown): value is T {
+  return typeof value === 'string' && options.some((option) => option === value);
+}
+
+function isInjuryList(value: unknown): value is Injury[] {
+  return Array.isArray(value) && value.every((entry) => isOption(INJURIES, entry));
+}
+
+/** Shallow: every field present, every union member known. Ranges belong to the route that accepts the profile. */
+export function isProfile(value: unknown): value is Profile {
+  if (typeof value !== 'object' || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    isOption(SEXES, candidate.sex) &&
+    Number.isFinite(candidate.age) &&
+    Number.isFinite(candidate.heightCm) &&
+    Number.isFinite(candidate.bodyweightKg) &&
+    isOption(GOALS, candidate.primaryGoal) &&
+    (candidate.secondaryGoal === null || isOption(GOALS, candidate.secondaryGoal)) &&
+    Number.isFinite(candidate.daysPerWeek) &&
+    Number.isFinite(candidate.sessionMinutes) &&
+    isOption(YEARS_TRAINING, candidate.yearsTraining) &&
+    isOption(EQUIPMENT, candidate.equipment) &&
+    isOption(TRAINING_STYLES, candidate.trainingStyle) &&
+    isOption(CARDIO, candidate.cardio) &&
+    isInjuryList(candidate.injuries) &&
+    typeof candidate.notes === 'string'
+  );
 }
 
 export interface Exercise {
@@ -76,9 +149,11 @@ function isMissingFile(error: unknown): boolean {
   return error instanceof Error && 'code' in error && error.code === 'ENOENT';
 }
 
+/** A profile saved before structured onboarding no longer matches `Profile`; it is dropped so onboarding runs again instead of the server serving a shape nothing can read. */
 export async function loadState(path: string = DEFAULT_STATE_PATH): Promise<State> {
   try {
-    return JSON.parse(await readFile(path, 'utf8')) as State;
+    const saved = JSON.parse(await readFile(path, 'utf8')) as State;
+    return { ...saved, profile: isProfile(saved.profile) ? saved.profile : null };
   } catch (error) {
     if (isMissingFile(error)) return emptyState();
     throw error;
