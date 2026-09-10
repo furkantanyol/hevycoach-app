@@ -98,6 +98,12 @@ export interface Choice {
   value: string;
 }
 
+/** A coach message that asks for a number instead of offering pills; the app renders a field with the unit. */
+export interface MessageInput {
+  kind: 'bodyweight';
+  unit: 'kg';
+}
+
 export interface Message {
   id: string;
   role: 'user' | 'assistant';
@@ -105,8 +111,8 @@ export interface Message {
   createdAt: string;
   kind?: 'plan' | 'review';
   choices?: Choice[];
-  /** True when the pills toggle and a Done pill sends every chosen value at once. */
-  multi?: boolean;
+  /** Offered instead of choices: the app renders a numeric field and sends what was typed as the text. */
+  input?: MessageInput;
   /** Snapshot of the block this turn wrote; set on plan messages. */
   block?: Block;
   /** Name of the block session the workout matched; set on review messages. */
@@ -114,14 +120,30 @@ export interface Message {
 }
 
 /** Exported like the other option lists: the app labels a step, and the type is derived from it. */
-export const INTAKE_STEPS = ['goals', 'daysPerWeek', 'injuries', 'bodyweight', 'bodyweightValue'] as const;
+export const INTAKE_STEPS = [
+  'start',
+  'yearsTraining',
+  'daysPerWeek',
+  'equipment',
+  'goals',
+  'injuries',
+  'bodyweight',
+  'bodyweightValue',
+] as const;
 
 export type IntakeStep = (typeof INTAKE_STEPS)[number];
+
+/** The opener branches the script: someone new to Hevy has no history to read the answers off. */
+export const INTAKE_PATHS = ['existing', 'new'] as const;
+
+export type IntakePath = (typeof INTAKE_PATHS)[number];
 
 /** The scripted intake in flight: the question waiting for an answer, and what has been answered. */
 export interface IntakeState {
   step: IntakeStep;
   answers: Partial<Profile>;
+  /** Which branch is running; absent until the opener is answered, and read as the existing path until then. */
+  path?: IntakePath;
 }
 
 /** A change the coach proposed after a workout; nothing reaches Hevy until the athlete accepts it. */

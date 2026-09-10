@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CREATE_PROGRAM_TOOL, PLAN_OUTPUT_SCHEMA } from './prompt.js';
-import { REVIEW_OUTPUT_SCHEMA } from './review-prompt.js';
+import { REVIEW_OUTPUT_SCHEMA, reviewTask } from './review-prompt.js';
 import { EQUIPMENT, GOALS, INJURIES, YEARS_TRAINING, type Profile } from './state.js';
 
 const RANGE_KEYWORDS = ['minimum', 'maximum', 'maxItems', 'minItems'];
@@ -32,6 +32,13 @@ const profile: Profile = {
   sessionMinutes: 60,
   yearsTraining: '3-5',
 };
+
+const REVIEW_HEADINGS = ['**Went well**', '**Push next time**', '**Proposed change**'];
+
+function messageDescription(): string {
+  const properties = REVIEW_OUTPUT_SCHEMA.properties as { message: { description: string } };
+  return properties.message.description;
+}
 
 const ENUM_FIELDS: [string, readonly string[]][] = [
   ['equipment', EQUIPMENT],
@@ -131,5 +138,23 @@ describe('REVIEW_OUTPUT_SCHEMA', () => {
     const levels = objectSchemas(REVIEW_OUTPUT_SCHEMA);
 
     expect(levels.every((level) => level.additionalProperties === false)).toBe(true);
+  });
+
+  it.each(REVIEW_HEADINGS)('should describe the message with the %s heading', (heading) => {
+    expect(messageDescription()).toContain(heading);
+  });
+});
+
+describe('reviewTask', () => {
+  it.each(REVIEW_HEADINGS)('should ask the review message for the %s heading', (heading) => {
+    expect(reviewTask('the workout', 'the targets', 'the memory')).toContain(heading);
+  });
+
+  it('should ask for the proposal heading only when there is a proposal', () => {
+    expect(reviewTask('the workout', 'the targets', 'the memory')).toContain('only when you are proposing one');
+  });
+
+  it('should keep the question out of the bullets', () => {
+    expect(reviewTask('the workout', 'the targets', 'the memory')).toContain('plain last line');
   });
 });

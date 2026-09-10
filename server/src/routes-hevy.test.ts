@@ -1,23 +1,25 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { createHevyClient, type Workout, type WorkoutExercise } from '@furkantanyol/hevy-client';
+import { createHevyClient, type Workout, type WorkoutExercise, type WorkoutSet } from '@furkantanyol/hevy-client';
 import type { FastifyInstance } from 'fastify';
 import { describe, expect, it } from 'vitest';
 import type { CoachDeps } from './coach.js';
+import type { CardsView } from './derived.js';
 import { buildApp, type RouteDeps } from './routes.js';
-import { type Block, emptyState, type Message, type Session, type State } from './state.js';
+import { type Block, emptyState, type Exercise, type Message, type Session, type State } from './state.js';
 
 process.env.LOG_LEVEL = 'silent';
 
 const APP_TOKEN = 'app-token';
 const OK = 200;
 const MESSAGES = '/messages';
-const WEEK = '/week';
+const CARDS = '/cards';
 const WORKOUTS_PATH = '/v1/workouts';
 const MS_PER_MINUTE = 60_000;
 const MS_PER_DAY = 86_400_000;
 const SESSION_MINUTES = 75;
 const BODYWEIGHT_KG = 78.4;
 const WORKOUT_TITLE = 'Lower A';
+const SQUAT_TITLE = 'Squat (Barbell)';
 
 type Headers = Record<string, string>;
 
@@ -32,7 +34,9 @@ const offline: typeof fetch = async () => {
 
 const iso = (epochMs: number): string => new Date(epochMs).toISOString();
 
-const squat: WorkoutExercise = { index: 0, title: 'Squat (Barbell)', notes: '', exercise_template_id: 'SQ', superset_id: null, sets: [] };
+const workingSet: WorkoutSet = { index: 1, type: 'normal', weight_kg: 100, reps: 5, distance_meters: null, duration_seconds: null, rpe: null, custom_metric: null };
+const warmupSet: WorkoutSet = { ...workingSet, index: 0, type: 'warmup', weight_kg: 60, reps: 10 };
+const squat: WorkoutExercise = { index: 0, title: SQUAT_TITLE, notes: '', exercise_template_id: 'SQ', superset_id: null, sets: [warmupSet, workingSet] };
 
 function loggedWorkout(daysAgo: number, routineId: string | null): Workout {
   const start = Date.now() - daysAgo * MS_PER_DAY;
@@ -40,7 +44,7 @@ function loggedWorkout(daysAgo: number, routineId: string | null): Workout {
   return { id: `w-${daysAgo}`, title: WORKOUT_TITLE, routine_id: routineId, description: '', start_time: startedAt, end_time: iso(start + SESSION_MINUTES * MS_PER_MINUTE), updated_at: startedAt, created_at: startedAt, exercises: [squat] };
 }
 
-/** Serves the two endpoints the history reads, so the opener and the week strip see a real account. */
+/** Serves the two endpoints the history reads, so the opener and the cards see a real account. */
 function hevyFetch(workouts: Workout[]): typeof fetch {
   return async (input) => {
     const path = new URL(String(input)).pathname;
@@ -75,8 +79,9 @@ function harness(seed: Partial<State> = {}, hevy: typeof fetch = offline) {
   return { app: buildApp(deps), state };
 }
 
-const blockSession = (name: string, hevyRoutineId: string): Session => ({ name, focus: 'lower', hevyRoutineId, exercises: [] });
-const block: Block = { name: 'Block A', weeks: 4, sessions: [blockSession('Day 1 - Heavy Lower', 'r-lower'), blockSession('Day 2 - Heavy Upper', 'r-upper')], createdAt: '2026-09-01T10:00:00.000Z', reason: 'intake' };
+const pressExercise: Exercise = { templateId: 'OHP', title: 'Overhead Press (Barbell)', sets: 3, reps: 5, weightKg: 50, rpe: 8, note: '' };
+const blockSession = (name: string, hevyRoutineId: string, exercises: Exercise[] = []): Session => ({ name, focus: 'lower', hevyRoutineId, exercises });
+const block: Block = { name: 'Block A', weeks: 4, sessions: [blockSession('Day 1 - Heavy Lower', 'r-lower'), blockSession('Day 2 - Heavy Upper', 'r-upper', [pressExercise])], createdAt: '2026-09-01T10:00:00.000Z', reason: 'intake' };
 
 describe('GET /messages', () => {
   it('should open the thread with the welcome and the first question', async () => {
@@ -87,18 +92,20 @@ describe('GET /messages', () => {
     expect(messages).toEqual([
       expect.objectContaining({
         role: 'assistant',
-        text: "I'm your coach on top of Hevy. I've read your 2 workouts. A few questions, then I'll write your first block into Hevy.\n\nWhat are you training for?",
-        multi: true,
+        text: "I'm your coach on top of Hevy. I've read your 2 workouts. A few questions, then I'll write your first block into Hevy.\n\nNew to Hevy, or been logging for a while?",
       }),
     ]);
   });
 
-  it('should offer the goals as choices under the opener', async () => {
+  it('should offer the two starting points as choices under the opener', async () => {
     const { app } = harness({}, hevyFetch([]));
 
-    const messages = (await get(app, MESSAGES, appAuth)).json();
+    const messages = (await get(app, MESSAGES, appAuth)).json<Message[]>();
 
-    expect(messages[0].choices[0]).toEqual({ label: 'Muscle', value: 'muscle' });
+    expect(messages[0].choices).toEqual([
+      { label: 'New to Hevy', value: 'new' },
+      { label: 'Been logging', value: 'existing' },
+    ]);
   });
 
   it('should append the opener once however often the thread is loaded', async () => {
@@ -120,27 +127,37 @@ describe('GET /messages', () => {
   });
 });
 
-describe('GET /week', () => {
-  it('should count this week, name the last workout and the session that follows it', async () => {
+describe('GET /cards', () => {
+  it('should report the week volume, the last workout and the session that follows it', async () => {
     const workouts = [loggedWorkout(0, 'r-lower')];
     const { app } = harness({ block }, hevyFetch(workouts));
 
-    const response = await get(app, WEEK, appAuth);
+    const cards = (await get(app, CARDS, appAuth)).json<CardsView>();
 
-    expect(response.json()).toEqual({
-      workoutsThisWeek: 1,
-      lastWorkout: { title: WORKOUT_TITLE, at: workouts[0].start_time },
-      nextSession: 'Day 2 - Heavy Upper',
+    expect(cards).toMatchObject({
+      weekVolume: { totalKg: 500, sessions: 1 },
+      lastWorkout: {
+        title: WORKOUT_TITLE,
+        at: workouts[0].start_time,
+        lifts: [{ title: SQUAT_TITLE, sets: 1, reps: 5, weightKg: 100, volumeKg: 500 }],
+      },
+      nextSession: { name: 'Day 2 - Heavy Upper', exercises: ['Overhead Press (Barbell)'] },
     });
   });
 
-  it('should report an empty week and no next session before the coach has written a block', async () => {
+  it('should draw the seven bars of the week from Monday', async () => {
+    const { app } = harness({ block }, hevyFetch([loggedWorkout(0, 'r-lower')]));
+
+    const cards = (await get(app, CARDS, appAuth)).json<CardsView>();
+
+    expect(cards.weekVolume.byDay.map((bar) => bar.day)).toEqual(['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']);
+  });
+
+  it('should report an empty week and no cards before the coach has written a block', async () => {
     const { app } = harness({}, hevyFetch([]));
 
-    expect((await get(app, WEEK, appAuth)).json()).toEqual({
-      workoutsThisWeek: 0,
-      lastWorkout: null,
-      nextSession: null,
-    });
+    const cards = (await get(app, CARDS, appAuth)).json<CardsView>();
+
+    expect([cards.weekVolume.totalKg, cards.lastWorkout, cards.nextSession]).toEqual([0, null, null]);
   });
 });

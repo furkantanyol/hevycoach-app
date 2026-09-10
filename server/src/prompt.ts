@@ -23,6 +23,13 @@ const REP_RANGE = '1 to 30';
 const RPE_RANGE = '5 to 10';
 const WEEKS_RANGE = '4 to 6';
 
+/** The shape of the plan the athlete reads. Stated in the task and in the schema so the two cannot drift. */
+const PLAN_MARKDOWN = `Write the analysis as markdown, three bold headings in this order and nothing else.
+**Where you stand**: three bullets.
+**Your block**: the block name and how many weeks, then one bullet per session — "Day 1 – Heavy Lower: box squat, deadlift, hip thrust…".
+**This week**: two bullets.
+Short bullets in your voice, no emoji, never a question.`;
+
 export function untrusted(text: string): string {
   const redacted = text.split(USER_INPUT_OPEN).join(REDACTED_DELIMITER).split(USER_INPUT_CLOSE).join(REDACTED_DELIMITER);
   return `${USER_INPUT_OPEN}\n${redacted}\n${USER_INPUT_CLOSE}`;
@@ -57,7 +64,7 @@ Adaptation rules, applied to every finished workout:
 
 # 3. Voice
 
-Lead with the one thing that matters. If nothing matters, say almost nothing. Two to five short lines. No headers, no bullet walls, no emoji. One question at most, and only when you need the answer. Specific numbers, never vague ones. Truth over diplomacy. Call out a miss once, as a line, then move on. Celebrate a win with the same weight you give a miss. Never nag.
+Lead with the one thing that matters. If nothing matters, say almost nothing. A chat reply is two to five short lines, no headings and no bullets. The plan message and the review message are the exception: there bullets and bold headings are allowed, in the shape the task gives you. No bullet walls and no emoji anywhere. One question at most, and only when you need the answer. Specific numbers, never vague ones. Truth over diplomacy. Call out a miss once, as a line, then move on. Celebrate a win with the same weight you give a miss. Never nag.
 
 # 4. Scope
 
@@ -146,7 +153,7 @@ export function contextBlock(state: State): string {
   return sections.join('\n');
 }
 
-function enumField(options: readonly string[], description: string): Record<string, unknown> {
+export function enumField(options: readonly string[], description: string): Record<string, unknown> {
   return { type: 'string', enum: [...options], description };
 }
 
@@ -229,8 +236,7 @@ export const PLAN_OUTPUT_SCHEMA: Record<string, unknown> = {
   properties: {
     analysis: {
       type: 'string',
-      description:
-        'for the athlete to read: strengths, weaknesses, stalls, what you are keeping and why. Your voice, five short lines at most, no headers. Never a question and never a refusal: when something is unknown, name the conservative assumption you made in one line.',
+      description: `for the athlete to read: strengths, weaknesses, stalls, what you are keeping and why. ${PLAN_MARKDOWN}\nNever a refusal: when something is unknown, name the conservative assumption you made in one bullet.`,
     },
     block: {
       type: 'object',
@@ -273,7 +279,9 @@ Every templateId must be copied verbatim from the catalogue; an id that is not i
 
 Give the athlete ${profile.daysPerWeek} sessions a week, every muscle twice a week, volume inside the landmarks, and DUP if they are intermediate.
 
-The block is always complete: a name, ${MIN_SESSIONS} to ${MAX_SESSIONS} sessions matching the days per week above, and every session holding exercises built from the catalogue ids. Never return an empty block, and never ask a question in the analysis — nothing here can answer it. When something is unknown, make the conservative assumption, program it, and state that assumption in one line of the analysis.
+The block is always complete: a name, ${MIN_SESSIONS} to ${MAX_SESSIONS} sessions matching the days per week above, and every session holding exercises built from the catalogue ids. Never return an empty block, and never ask a question in the analysis — nothing here can answer it. When something is unknown, make the conservative assumption, program it, and state that assumption in one bullet of the analysis.
+
+${PLAN_MARKDOWN}
 
 ${data}`;
 }

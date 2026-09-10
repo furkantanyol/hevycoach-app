@@ -139,15 +139,34 @@ export const last = (deps: CoachDeps) => deps.state.messages.at(-1);
 export const tap = (deps: CoachDeps, text: string, choice: string | string[]) => handleIntakeReply(deps, text, choice);
 export const typed = (deps: CoachDeps, text: string) => handleIntakeReply(deps, text, undefined);
 
-/** Answers goals and days with pills, leaving the script on the injuries question. */
+export const DONE_LABEL = "No, that's it";
+
+/** Closes a multi-answer loop, which every path runs twice. */
+export const done = (deps: CoachDeps) => tap(deps, DONE_LABEL, 'done');
+
+/** The existing script, answered with pills: the branch, the goals loop, the days. Stops on injuries. */
 export async function toInjuries(deps: CoachDeps): Promise<void> {
   await ensureOpener(deps);
-  await tap(deps, 'Muscle', ['muscle']);
+  await tap(deps, 'Been logging', 'existing');
+  await tap(deps, 'Muscle', 'muscle');
+  await done(deps);
   await tap(deps, '4', '4');
 }
 
 /** The same, plus a tapped "Nothing", leaving the script on the bodyweight question. */
 export async function toBodyweight(deps: CoachDeps): Promise<void> {
   await toInjuries(deps);
-  await tap(deps, 'Nothing', ['nothing']);
+  await tap(deps, 'Nothing', 'nothing');
+}
+
+/** The new-to-Hevy script, answered with pills, leaving the script on the typed bodyweight field. */
+export async function toNewBodyweight(deps: CoachDeps): Promise<void> {
+  await ensureOpener(deps);
+  await tap(deps, 'New to Hevy', 'new');
+  await tap(deps, '5 years or more', '5+');
+  await tap(deps, '4', '4');
+  await tap(deps, 'Home gym', 'home_gym');
+  await tap(deps, 'Muscle', 'muscle');
+  await done(deps);
+  await tap(deps, 'Nothing', 'nothing');
 }

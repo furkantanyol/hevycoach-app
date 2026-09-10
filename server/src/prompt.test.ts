@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { contextBlock, planTask, SYSTEM_PROMPT, untrusted, USER_INPUT_CLOSE, USER_INPUT_OPEN } from './prompt.js';
+import { contextBlock, PLAN_OUTPUT_SCHEMA, planTask, SYSTEM_PROMPT, untrusted, USER_INPUT_CLOSE, USER_INPUT_OPEN } from './prompt.js';
 import { emptyState, type Block, type Exercise, type IntakeState, type Profile, type State } from './state.js';
 
 const profile: Profile = {
@@ -39,6 +39,14 @@ const PROFILE_LINES = [
   'Session length: 60 min · Years training: 3-5 · Equipment: full_gym',
   'Injuries: knee, shoulder',
 ].join('\n');
+
+const PLAN_HEADINGS = ['**Where you stand**', '**Your block**', '**This week**'];
+const SESSION_BULLET = 'Day 1 – Heavy Lower: box squat, deadlift, hip thrust';
+
+function analysisDescription(): string {
+  const properties = PLAN_OUTPUT_SCHEMA.properties as { analysis: { description: string } };
+  return properties.analysis.description;
+}
 
 function stateWith(overrides: Partial<State>): State {
   return { ...emptyState(), ...overrides };
@@ -199,6 +207,14 @@ describe('SYSTEM_PROMPT', () => {
   it('should make a change the coach proposes wait for the athlete', () => {
     expect(SYSTEM_PROMPT).toContain('waits in the pending proposal until they accept it');
   });
+
+  it('should hold a chat reply to two to five short lines', () => {
+    expect(SYSTEM_PROMPT).toContain('A chat reply is two to five short lines');
+  });
+
+  it('should allow bullets and bold headings in the plan and the review', () => {
+    expect(SYSTEM_PROMPT).toContain('bullets and bold headings are allowed');
+  });
 });
 
 describe('planTask', () => {
@@ -234,5 +250,23 @@ describe('planTask', () => {
 
   it('should forbid an empty block so the model cannot answer with words instead', () => {
     expect(planTask(profile, 'history', 'catalogue', 'reason')).toContain('Never return an empty block');
+  });
+
+  it.each(PLAN_HEADINGS)('should ask the plan message for the %s heading', (heading) => {
+    expect(planTask(profile, 'history', 'catalogue', 'reason')).toContain(heading);
+  });
+
+  it('should show the shape of one session bullet', () => {
+    expect(planTask(profile, 'history', 'catalogue', 'reason')).toContain(SESSION_BULLET);
+  });
+});
+
+describe('PLAN_OUTPUT_SCHEMA', () => {
+  it.each(PLAN_HEADINGS)('should describe the analysis with the %s heading', (heading) => {
+    expect(analysisDescription()).toContain(heading);
+  });
+
+  it('should describe the analysis with the shape of one session bullet', () => {
+    expect(analysisDescription()).toContain(SESSION_BULLET);
   });
 });

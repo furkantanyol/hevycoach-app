@@ -5,6 +5,13 @@ export const NO_TARGETS = 'no targets: this workout is not part of the current b
 /** The review rewrites the memory each time; `review` truncates to this so a drifting model cannot grow it without bound. */
 export const MEMORY_MAX_CHARACTERS = 1500;
 
+/** The shape of the review the athlete reads. Stated in the task and in the schema so the two cannot drift. */
+const REVIEW_MARKDOWN = `Write it as markdown, bold headings with one to three short bullets each, in this order.
+**Went well**
+**Push next time**
+**Proposed change** — only when you are proposing one; leave the heading out entirely otherwise.
+Then the question, as a plain last line outside the bullets. No emoji.`;
+
 /** One session of the current block, rewritten whole. The guard bounds the numbers before any of it reaches Hevy. */
 const PROPOSAL_SCHEMA = {
   type: 'object',
@@ -33,8 +40,7 @@ export const REVIEW_OUTPUT_SCHEMA: Record<string, unknown> = {
   properties: {
     message: {
       type: 'string',
-      description:
-        'the review the athlete reads: what went well, what to push next week, what you propose to change, ending with one question. Two to five short lines, no headers.',
+      description: `the review the athlete reads: what went well, what to push next time, what you propose to change, ending with one question. ${REVIEW_MARKDOWN}`,
     },
     memory: {
       type: 'string',
@@ -63,6 +69,8 @@ ${memory.trim() || NO_MEMORY}
 ${untrusted(workout)}
 
 Compare what was done with the targets, name the adaptation rule that applies, say what changes next week, and end with one question. Rewrite the memory with what is durable from this session, under ${MEMORY_MAX_CHARACTERS} characters.
+
+${REVIEW_MARKDOWN}
 
 Propose a change only when an adaptation rule calls for one and this workout matched a session of the current block: name that session exactly as the block names it and rewrite it whole. Otherwise return proposal: null. Nothing is written to Hevy until the athlete accepts the proposal, so say what you propose in the message and let them answer.`;
 }

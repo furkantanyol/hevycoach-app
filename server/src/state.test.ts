@@ -76,7 +76,7 @@ describe('state', () => {
 
   it('should return the same state when a saved state is loaded back', async () => {
     const messages: Message[] = [
-      { id: 'm1', role: 'assistant', text: 'What are you training for?', createdAt: '2026-09-10T10:00:00.000Z', choices: [{ label: 'Muscle', value: 'muscle' }], multi: true },
+      { id: 'm1', role: 'assistant', text: 'What are you training for?', createdAt: '2026-09-10T10:00:00.000Z', choices: [{ label: 'Muscle', value: 'muscle' }] },
       { id: 'm2', role: 'user', text: 'Muscle', createdAt: '2026-09-10T10:00:01.000Z' },
     ];
     const state: State = {

@@ -3,7 +3,7 @@ import type { IncomingHttpHeaders } from 'node:http';
 import Fastify, { type FastifyBaseLogger, type FastifyInstance, type FastifyReply, type FastifyServerOptions } from 'fastify';
 import { APPLY, deliveryOf, deviceToken, messageChoice, messageText, proposalChoice, TEXT_MAX_CHARACTERS } from './body.js';
 import { applyProposal, chatTurn, type CoachDeps, discardProposal, review } from './coach.js';
-import { RECENT_WORKOUTS, weekView } from './derived.js';
+import { cardsView, RECENT_WORKOUTS } from './derived.js';
 import { recentWorkouts } from './hevy.js';
 import { ensureOpener, handleIntakeReply, intakeActive } from './intake.js';
 import { sendPush } from './push.js';
@@ -14,7 +14,7 @@ const HEALTH_PATH = '/health';
 const WEBHOOK_PATH = '/webhook/hevy';
 const MESSAGES_PATH = '/messages';
 const DEVICE_PATH = '/device';
-const WEEK_PATH = '/week';
+const CARDS_PATH = '/cards';
 
 const OK = 200;
 const NO_CONTENT = 204;
@@ -239,9 +239,10 @@ function appRoutes(app: FastifyInstance, deps: RouteDeps): void {
     return reply.code(NO_CONTENT).send();
   });
 
-  app.get(WEEK_PATH, async () =>
-    weekView(deps.state.block, await recentWorkouts(deps.coach.hevy, RECENT_WORKOUTS)),
-  );
+  app.get(CARDS_PATH, async () => {
+    const recent = await recentWorkouts(deps.coach.hevy, RECENT_WORKOUTS);
+    return cardsView(deps.state.block, recent, new Date());
+  });
 }
 
 function webhookRoute(app: FastifyInstance, deps: RouteDeps): void {

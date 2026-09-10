@@ -1,7 +1,7 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import type { CoachDeps } from './coach.js';
-import { SYSTEM_PROMPT, untrusted } from './prompt.js';
-import { GOALS, INJURIES, type Goal, type Injury, type IntakeStep, type Profile } from './state.js';
+import { enumField, SYSTEM_PROMPT, untrusted } from './prompt.js';
+import { EQUIPMENT, GOALS, INJURIES, INTAKE_PATHS, YEARS_TRAINING, type Goal, type Injury, type IntakePath, type IntakeStep, type Profile } from './state.js';
 
 export const DAYS_PER_WEEK = [2, 3, 4, 5, 6];
 export const BODYWEIGHT_KG = { min: 30, max: 250 } as const;
@@ -9,9 +9,11 @@ export const BODYWEIGHT_KG = { min: 30, max: 250 } as const;
 export const NOTHING = 'nothing';
 export const YES = 'yes';
 export const CHANGED = 'changed';
+/** Tapped to close a multi-answer loop: everything already chosen stands and the script moves on. */
+export const DONE = 'done';
 
-/** One answered profile field, or the athlete saying the bodyweight Hevy holds has changed. */
-export type Answer = Partial<Profile> | typeof CHANGED;
+/** One answered profile field, the held bodyweight changing, the end of a loop, or the branch they chose. */
+export type Answer = Partial<Profile> | typeof CHANGED | typeof DONE | { path: IntakePath };
 
 /** The step a typed reply is answering, and the bodyweight Hevy holds when that step confirms it. */
 export interface AnsweredStep {
@@ -30,6 +32,14 @@ const strings = (value: unknown): string[] =>
 
 const isGoal = (value: string): value is Goal => GOALS.some((goal) => goal === value);
 const isInjury = (value: string): value is Injury => INJURIES.some((injury) => injury === value);
+
+/** The branch answer is the one that sets no profile field, so it travels as its own shape. */
+export const isPath = (answer: Answer): answer is { path: IntakePath } => typeof answer !== 'string' && 'path' in answer;
+
+function chosenOption<T extends string>(options: readonly T[], value: unknown): T | null {
+  const chosen = single(value);
+  return options.find((option) => option === chosen) ?? null;
+}
 
 function goalsAnswer(value: unknown): Answer | null {
   const goals = strings(value).filter(isGoal);
@@ -53,9 +63,27 @@ function bodyweightAnswer(value: unknown): Answer | null {
   return bodyweightKg >= BODYWEIGHT_KG.min && bodyweightKg <= BODYWEIGHT_KG.max ? { bodyweightKg } : null;
 }
 
+function pathAnswer(value: unknown): Answer | null {
+  const path = chosenOption(INTAKE_PATHS, value);
+  return path ? { path } : null;
+}
+
+function yearsAnswer(value: unknown): Answer | null {
+  const yearsTraining = chosenOption(YEARS_TRAINING, value);
+  return yearsTraining ? { yearsTraining } : null;
+}
+
+function equipmentAnswer(value: unknown): Answer | null {
+  const equipment = chosenOption(EQUIPMENT, value);
+  return equipment ? { equipment } : null;
+}
+
 const ANSWER_OF: Record<IntakeStep, (value: unknown) => Answer | null> = {
-  goals: goalsAnswer,
+  start: pathAnswer,
+  yearsTraining: yearsAnswer,
   daysPerWeek: daysAnswer,
+  equipment: equipmentAnswer,
+  goals: goalsAnswer,
   injuries: injuriesAnswer,
   bodyweight: bodyweightAnswer,
   bodyweightValue: bodyweightAnswer,
@@ -69,15 +97,30 @@ export function answerOf(step: IntakeStep, value: unknown): Answer | null {
 const KILOGRAMS = `a number of kilograms between ${BODYWEIGHT_KG.min} and ${BODYWEIGHT_KG.max}`;
 
 const ASKED: Record<IntakeStep, { task: string; values: string; field: Record<string, unknown> }> = {
-  goals: {
-    task: 'what they are training for',
-    values: GOALS.join(', '),
-    field: { type: 'array', description: 'every goal they named', items: { type: 'string', enum: [...GOALS] } },
+  start: {
+    task: 'whether they are new to Hevy or have been logging workouts in it for a while',
+    values: `${INTAKE_PATHS.join(', ')}: new when they have little or no history, existing when they have been logging`,
+    field: enumField(INTAKE_PATHS, 'new when Hevy is new to them, existing when they have been logging'),
+  },
+  yearsTraining: {
+    task: 'how long they have been training',
+    values: YEARS_TRAINING.join(', '),
+    field: enumField(YEARS_TRAINING, 'years of consistent training'),
   },
   daysPerWeek: {
     task: 'how many days a week they can train',
     values: DAYS_PER_WEEK.join(', '),
     field: { type: 'integer', description: `training days a week, ${DAYS_PER_WEEK.join(', ')}` },
+  },
+  equipment: {
+    task: 'what equipment they train with',
+    values: EQUIPMENT.join(', '),
+    field: enumField(EQUIPMENT, 'the equipment they actually train with'),
+  },
+  goals: {
+    task: 'what they are training for',
+    values: `${GOALS.join(', ')}, or an empty list when they are naming no more goals`,
+    field: { type: 'array', description: 'every goal they named, empty when they name none', items: { type: 'string', enum: [...GOALS] } },
   },
   injuries: {
     task: 'anything to work around: injuries, joints, areas that hurt',
@@ -134,6 +177,9 @@ function textOf(message: Anthropic.Message): string {
     .join('');
 }
 
+/** The way out of the goals loop in words: the reply answers the question and names no goal to add. */
+const leavesGoals = (step: IntakeStep, field: unknown): boolean => step === 'goals' && Array.isArray(field) && field.length === 0;
+
 /** One small call: a typed reply is mapped onto the step the script is waiting on, or reported unclear. */
 export async function interpret(deps: CoachDeps, asked: AnsweredStep, text: string): Promise<Answer | null> {
   const { step } = asked;
@@ -146,5 +192,6 @@ export async function interpret(deps: CoachDeps, asked: AnsweredStep, text: stri
   });
   const parsed = JSON.parse(textOf(message)) as { field: unknown; unclear: boolean };
   if (parsed.unclear) return null;
+  if (leavesGoals(step, parsed.field)) return DONE;
   return answerOf(step, parsed.field);
 }

@@ -1,4 +1,4 @@
-import type { Workout } from '@furkantanyol/hevy-client';
+import type { Workout, WorkoutExercise } from '@furkantanyol/hevy-client';
 import type { ExerciseHistory, HistorySummary } from './hevy.js';
 import type { Block, Profile } from './state.js';
 
@@ -13,10 +13,45 @@ export interface Prefill {
   firstWorkout: string | null;
 }
 
-export interface WeekView {
-  workoutsThisWeek: number;
-  lastWorkout: { title: string; at: string } | null;
-  nextSession: string | null;
+export type DayLabel = 'Mon' | 'Tue' | 'Wed' | 'Thu' | 'Fri' | 'Sat' | 'Sun';
+
+/** One bar of the week volume chart. */
+export interface DayVolume {
+  day: DayLabel;
+  kg: number;
+}
+
+export interface WeekVolume {
+  totalKg: number;
+  sessions: number;
+  byDay: DayVolume[];
+}
+
+/** One exercise of the last workout, collapsed to the line the card prints. */
+export interface Lift {
+  title: string;
+  sets: number;
+  reps: number;
+  weightKg: number;
+  volumeKg: number;
+}
+
+export interface LastWorkout {
+  title: string;
+  at: string;
+  lifts: Lift[];
+}
+
+export interface NextSession {
+  name: string;
+  exercises: string[];
+}
+
+/** The three cards of the carousel. */
+export interface CardsView {
+  weekVolume: WeekVolume;
+  lastWorkout: LastWorkout | null;
+  nextSession: NextSession | null;
 }
 
 interface Range {
@@ -26,7 +61,7 @@ interface Range {
 
 /** Eight weeks of training at the highest allowed frequency, so the window is never cut short. */
 export const PREFILL_WORKOUTS = 60;
-/** The window /week reads: wide enough for this week's count and for the last routine the athlete ran. */
+/** The window the cards read: wide enough for this week's volume and for the last routine the athlete ran. */
 export const RECENT_WORKOUTS = 30;
 
 const DAYS_PER_WEEK_RANGE: Range = { min: 1, max: 7 };
@@ -41,6 +76,13 @@ const MS_PER_MINUTE = 60_000;
 const MS_PER_DAY = 86_400_000;
 const MS_PER_YEAR = 31_557_600_000;
 const HALF = 2;
+
+/** Monday first, so the bars read the way the week is lived. */
+const DAY_LABELS: readonly DayLabel[] = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+/** Each card has room for four lines. */
+const TOP_LIFTS = 4;
+const NEXT_SESSION_EXERCISES = 4;
+const WARMUP_SET = 'warmup';
 
 /** Hevy writes the equipment into the template title, e.g. "Bench Press (Barbell)". */
 const FULL_GYM_MARKERS = ['barbell', 'machine', 'cable'];
@@ -113,12 +155,98 @@ export function prefillFrom(summary: HistorySummary, recent: Workout[]): Prefill
   };
 }
 
+/** Monday is bar 0; `getDay` puts Sunday first, so it shifts to the end. */
+const dayIndex = (date: Date): number => (date.getDay() + SUNDAY_SHIFT) % DAYS_PER_WEEK;
+
 /** Most recent Monday at 00:00 in the server's local zone. */
 function startOfWeek(now: Date): number {
   const monday = new Date(now);
-  monday.setDate(monday.getDate() - ((monday.getDay() + SUNDAY_SHIFT) % DAYS_PER_WEEK));
+  monday.setDate(monday.getDate() - dayIndex(monday));
   monday.setHours(0, 0, 0, 0);
   return monday.getTime();
+}
+
+interface WorkingSet {
+  weightKg: number;
+  reps: number;
+}
+
+/** Warm-ups are not volume, and a set logged without a weight is bodyweight, which Hevy cannot price. */
+function workingSets(exercise: WorkoutExercise): WorkingSet[] {
+  return exercise.sets
+    .filter((set) => set.type !== WARMUP_SET)
+    .map((set) => ({ weightKg: set.weight_kg ?? 0, reps: set.reps ?? 0 }));
+}
+
+const volumeOf = (sets: WorkingSet[]): number =>
+  sets.reduce((total, set) => total + set.weightKg * set.reps, 0);
+
+const workoutVolume = (workout: Workout): number =>
+  workout.exercises.reduce((total, exercise) => total + volumeOf(workingSets(exercise)), 0);
+
+function weekVolumeOf(recent: Workout[], now: Date): WeekVolume {
+  const weekStart = startOfWeek(now);
+  const thisWeek = recent.filter((workout) => startedAt(workout) >= weekStart);
+  const kgByDay = new Array<number>(DAYS_PER_WEEK).fill(0);
+
+  for (const workout of thisWeek) {
+    kgByDay[dayIndex(new Date(startedAt(workout)))] += workoutVolume(workout);
+  }
+
+  return {
+    totalKg: Math.round(kgByDay.reduce((total, kg) => total + kg, 0)),
+    sessions: thisWeek.length,
+    byDay: DAY_LABELS.map((day, index) => ({ day, kg: Math.round(kgByDay[index]) })),
+  };
+}
+
+/** The reps they actually worked in; a tie goes to the value logged first. */
+function commonReps(sets: WorkingSet[]): number {
+  const countByReps = new Map<number, number>();
+  for (const set of sets) countByReps.set(set.reps, (countByReps.get(set.reps) ?? 0) + 1);
+
+  let common = 0;
+  let mostSeen = 0;
+  for (const [reps, count] of countByReps) {
+    if (count <= mostSeen) continue;
+    common = reps;
+    mostSeen = count;
+  }
+  return common;
+}
+
+/** Hevy logs an exercise twice when it comes back later in the session; the card shows it once. */
+function setsByExercise(workout: Workout): Map<string, WorkingSet[]> {
+  const byTitle = new Map<string, WorkingSet[]>();
+  for (const exercise of workout.exercises) {
+    const sets = [...(byTitle.get(exercise.title) ?? []), ...workingSets(exercise)];
+    if (sets.length > 0) byTitle.set(exercise.title, sets);
+  }
+  return byTitle;
+}
+
+function liftOf(title: string, sets: WorkingSet[]): Lift {
+  return {
+    title,
+    sets: sets.length,
+    reps: commonReps(sets),
+    weightKg: sets.reduce((top, set) => Math.max(top, set.weightKg), 0),
+    volumeKg: Math.round(volumeOf(sets)),
+  };
+}
+
+/** The four lifts that carried the session, heaviest total first. */
+function topLifts(workout: Workout): Lift[] {
+  return [...setsByExercise(workout)]
+    .map(([title, sets]) => liftOf(title, sets))
+    .sort((a, b) => b.volumeKg - a.volumeKg)
+    .slice(0, TOP_LIFTS);
+}
+
+function lastWorkoutOf(recent: Workout[]): LastWorkout | null {
+  const last = recent[0];
+  if (!last) return null;
+  return { title: last.title, at: last.start_time, lifts: topLifts(last) };
 }
 
 function sessionIndexOf(block: Block, workout: Workout): number {
@@ -127,20 +255,21 @@ function sessionIndexOf(block: Block, workout: Workout): number {
 }
 
 /** The session after the last one they actually ran; the first session when nothing in the window matches. */
-function nextSessionName(block: Block | null, recent: Workout[]): string | null {
+function nextSessionOf(block: Block | null, recent: Workout[]): NextSession | null {
   if (!block || block.sessions.length === 0) return null;
   const ran = recent.map((workout) => sessionIndexOf(block, workout)).find((index) => index >= 0);
-  const next = ran === undefined ? 0 : (ran + 1) % block.sessions.length;
-  return block.sessions[next].name;
+  const session = block.sessions[ran === undefined ? 0 : (ran + 1) % block.sessions.length];
+  return {
+    name: session.name,
+    exercises: session.exercises.slice(0, NEXT_SESSION_EXERCISES).map((exercise) => exercise.title),
+  };
 }
 
 /** `recent` comes newest first, as `recentWorkouts` returns it. */
-export function weekView(block: Block | null, recent: Workout[], now: Date = new Date()): WeekView {
-  const weekStart = startOfWeek(now);
-  const last = recent[0];
+export function cardsView(block: Block | null, recent: Workout[], now: Date): CardsView {
   return {
-    workoutsThisWeek: recent.filter((workout) => startedAt(workout) >= weekStart).length,
-    lastWorkout: last ? { title: last.title, at: last.start_time } : null,
-    nextSession: nextSessionName(block, recent),
+    weekVolume: weekVolumeOf(recent, now),
+    lastWorkout: lastWorkoutOf(recent),
+    nextSession: nextSessionOf(block, recent),
   };
 }

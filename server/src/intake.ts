@@ -1,67 +1,45 @@
 import { type CoachDeps, runProgram } from './coach.js';
 import { type Prefill, prefillFrom, PREFILL_WORKOUTS } from './derived.js';
 import { historySummary, recentWorkouts } from './hevy.js';
-import { type Answer, answerOf, CHANGED, DAYS_PER_WEEK, interpret, NOTHING, YES } from './intake-answer.js';
-import type { Choice, IntakeStep, Message, Profile, State } from './state.js';
+import { type Answer, answerOf, CHANGED, DONE, interpret, isPath, YES } from './intake-answer.js';
+import { chosen, isLoopStep, labelsOf, loopQuestion, type Question, QUESTIONS, WEIGH_QUESTION } from './intake-script.js';
+import type { IntakePath, IntakeStep, Message, Profile, State } from './state.js';
 import { newMessage } from './thread.js';
 
 const INITIAL_REASON = 'Initial intake';
 const OPEN_IN_HEVY = 'Open Hevy → Routines → HevyCoach: ';
+/** The one line the new-to-Hevy script closes on: nothing reaches the coach that is not logged. */
+const LOG_IN_HEVY = "Log your sessions in Hevy and I'll read them.";
 const PLAN_FAILED = 'I could not write your block into Hevy just then. Ask me to try again and I will.';
 const UNCLEAR = 'I did not catch that. ';
+const NO_GOALS = 'Pick at least one first. ';
+const NOTED = ', noted. ';
 const OPENER_FAILED = 'intake opener: could not read the Hevy history';
 const PLAN_LOG_FAILED = 'intake plan failed';
 /** The athlete's own words are kept whole up to here; the plan prompt reads them as untrusted text. */
 const NOTES_MAX = 1000;
+/** Until the opener is answered, and for a script saved before the branch existed. */
+const DEFAULT_PATH: IntakePath = 'existing';
 
 /** What the history cannot answer, from the amendment: full gym, an hour, and a beginner's history. */
 const DEFAULTS = { equipment: 'full_gym', sessionMinutes: 60, yearsTraining: '<1' } as const;
 /** Only reached if a step was somehow skipped; they keep the saved profile one `isProfile` accepts. */
 const FALLBACK = { goals: ['muscle'], daysPerWeek: 3, bodyweightKg: 80 } as const;
 
-interface Question {
-  step: IntakeStep;
-  text: string;
-  choices: Choice[];
-  multi: boolean;
-}
-
-/** One reply being answered. The history is read once a turn, on the steps that need it, or not at all. */
+/** One reply being answered. The history is read at most once, by the steps that need it, or not at all. */
 interface Turn {
   deps: CoachDeps;
   step: IntakeStep;
+  path: IntakePath;
   answers: Partial<Profile>;
   history: Prefill | null;
 }
 
-const HISTORY_STEPS: IntakeStep[] = ['injuries', 'bodyweight', 'bodyweightValue'];
-
-const GOAL_CHOICES: Choice[] = [
-  { label: 'Muscle', value: 'muscle' },
-  { label: 'Strength', value: 'strength' },
-  { label: 'Fat loss', value: 'fat_loss' },
-  { label: 'Longevity', value: 'longevity' },
-  { label: 'Athletic performance', value: 'athletic' },
-];
-
-const DAY_CHOICES: Choice[] = DAYS_PER_WEEK.map((days) => ({ label: String(days), value: String(days) }));
-
-const INJURY_CHOICES: Choice[] = [
-  { label: 'Knee', value: 'knee' },
-  { label: 'Shoulder', value: 'shoulder' },
-  { label: 'Lower back', value: 'lower_back' },
-  { label: 'Elbow or wrist', value: 'elbow_wrist' },
-  { label: 'Hip', value: 'hip' },
-  { label: 'Other', value: 'other' },
-  { label: 'Nothing', value: NOTHING },
-];
-
-const GOALS_QUESTION: Question = { step: 'goals', text: 'What are you training for?', choices: GOAL_CHOICES, multi: true };
-const DAYS_QUESTION: Question = { step: 'daysPerWeek', text: 'How many days a week?', choices: DAY_CHOICES, multi: false };
-const INJURIES_QUESTION: Question = { step: 'injuries', text: 'Anything to work around?', choices: INJURY_CHOICES, multi: true };
-const VALUE_QUESTION: Question = { step: 'bodyweightValue', text: 'What is it now?', choices: [], multi: false };
-/** Asked in place of the confirmation when Hevy holds no body measurement to confirm. */
-const NO_BODYWEIGHT_QUESTION: Question = { step: 'bodyweightValue', text: 'What do you weigh, in kilograms?', choices: [], multi: false };
+/** 'start' is in neither list, so answering the opener lands on the first question of the branch it chose. */
+const PATH_STEPS: Record<IntakePath, readonly IntakeStep[]> = {
+  existing: ['goals', 'daysPerWeek', 'injuries', 'bodyweight'],
+  new: ['yearsTraining', 'daysPerWeek', 'equipment', 'goals', 'injuries', 'bodyweight'],
+};
 
 const welcome = (workouts: number): string =>
   `I'm your coach on top of Hevy. I've read your ${workouts} workouts. A few questions, then I'll write your first block into Hevy.`;
@@ -73,37 +51,62 @@ async function prefill(deps: CoachDeps): Promise<Prefill> {
   return prefillFrom(summary, await recentWorkouts(deps.hevy, PREFILL_WORKOUTS));
 }
 
-function bodyweightQuestion(prefilled: number | null): Question {
-  if (prefilled === null) return NO_BODYWEIGHT_QUESTION;
+async function history(turn: Turn): Promise<Prefill> {
+  turn.history ??= await prefill(turn.deps);
+  return turn.history;
+}
+
+const heldBodyweight = async (turn: Turn): Promise<number | null> => (await history(turn)).bodyweightKg;
+
+const union = <T extends string>(before: readonly T[] = [], added: readonly T[] = []): T[] => [...new Set([...before, ...added])];
+
+/** A loop answer only ever adds: "Nothing" is offered on the first injuries ask alone, where the list is empty. */
+function merged(turn: Turn, answer: Partial<Profile>): Partial<Profile> {
+  const { step } = turn;
+  const answers = { ...turn.answers, ...answer };
+  if (!isLoopStep(step)) return answers;
+  if (step === 'goals') return { ...answers, goals: union(turn.answers.goals, answer.goals) };
+  return { ...answers, injuries: union(turn.answers.injuries, answer.injuries) };
+}
+
+async function bodyweightQuestion(turn: Turn): Promise<Question> {
+  const held = turn.path === 'new' ? null : await heldBodyweight(turn);
+  if (held === null) return WEIGH_QUESTION;
   return {
     step: 'bodyweight',
-    text: `Hevy has you at ${prefilled} kg. Still right?`,
+    text: `Hevy has you at ${held} kg. Still right?`,
     choices: [
-      { label: `Yes, ${prefilled} kg`, value: YES },
+      { label: `Yes, ${held} kg`, value: YES },
       { label: 'It changed', value: CHANGED },
     ],
-    multi: false,
   };
 }
 
-/** The bodyweight confirmation is not here: it is rebuilt from the history, which holds its number. */
-const ASKED: Record<Exclude<IntakeStep, 'bodyweight'>, Question> = {
-  goals: GOALS_QUESTION,
-  daysPerWeek: DAYS_QUESTION,
-  injuries: INJURIES_QUESTION,
-  bodyweightValue: VALUE_QUESTION,
-};
-
-/** `multi` rides alongside the choices: the app toggles those pills and sends them with one Done. */
-function asked(text: string, question: Question): Message {
-  const pills = question.choices.length > 0 ? { choices: question.choices, multi: question.multi } : {};
-  return { ...newMessage('assistant', text), ...pills };
+/** Only the confirmation reads the history, and only the existing script has a number to confirm. */
+async function questionOf(step: IntakeStep, turn: Turn): Promise<Question> {
+  if (step === 'bodyweight') return bodyweightQuestion(turn);
+  if (isLoopStep(step)) return loopQuestion(step, turn.answers);
+  return QUESTIONS[step];
 }
 
-async function ask(deps: CoachDeps, question: Question, answers: Partial<Profile>, prefix = ''): Promise<void> {
-  deps.state.intake = { step: question.step, answers };
+function nextStep(path: IntakePath, step: IntakeStep): IntakeStep | null {
+  if (step === 'bodyweightValue') return null;
+  const steps = PATH_STEPS[path];
+  return steps[steps.indexOf(step) + 1] ?? null;
+}
+
+/** An `input` question replaces the pills: the app renders a numeric field under the message instead. */
+function asked(text: string, question: Question): Message {
+  const message = newMessage('assistant', text);
+  if (question.input) return { ...message, input: question.input };
+  return { ...message, choices: question.choices };
+}
+
+function ask(turn: Turn, question: Question, prefix = ''): Promise<void> {
+  const { deps, answers, path } = turn;
+  deps.state.intake = { step: question.step, answers, path };
   deps.state.messages.push(asked(`${prefix}${question.text}`, question));
-  await deps.save();
+  return deps.save();
 }
 
 export function intakeActive(state: State): boolean {
@@ -112,7 +115,7 @@ export function intakeActive(state: State): boolean {
 
 const threadIsEmpty = (state: State): boolean => state.messages.length === 0 && state.profile === null;
 
-/** The app never invents the first message: the thread opens with the welcome and question one. */
+/** The app never invents the first message: the thread opens with the welcome and the branch question. */
 export async function ensureOpener(deps: CoachDeps): Promise<void> {
   const { state } = deps;
   if (!threadIsEmpty(state)) return;
@@ -122,38 +125,22 @@ export async function ensureOpener(deps: CoachDeps): Promise<void> {
     // Read again after the history call: two loads landing together both pass the first guard, and
     // the one that returns first appends the opener before it yields, so the other sees it here.
     if (!threadIsEmpty(state)) return;
-    state.intake = { step: GOALS_QUESTION.step, answers: {} };
-    state.messages.push(asked(`${welcome(workouts)}\n\n${GOALS_QUESTION.text}`, GOALS_QUESTION));
-    await deps.save();
+    const turn: Turn = { deps, step: 'start', path: DEFAULT_PATH, answers: {}, history: null };
+    await ask(turn, QUESTIONS.start, `${welcome(workouts)}\n\n`);
   } catch (error) {
     // The next load tries again: an opener written without the history would name a workout count it never read.
     deps.log(`${OPENER_FAILED}: ${describe(error)}`);
   }
 }
 
-/** The profile is saved before the block is written, so a failed plan leaves one they can re-run. */
-async function complete(turn: Turn, answers: Partial<Profile>): Promise<void> {
+/** The new script closes on one extra line, because nothing they do not log ever reaches the coach. */
+async function writePlan(turn: Turn, profile: Profile): Promise<void> {
   const { deps } = turn;
-  const history = turn.history ?? (await prefill(deps));
-  const profile: Profile = {
-    goals: answers.goals ?? [...FALLBACK.goals],
-    daysPerWeek: answers.daysPerWeek ?? FALLBACK.daysPerWeek,
-    bodyweightKg: answers.bodyweightKg ?? FALLBACK.bodyweightKg,
-    injuries: answers.injuries ?? [],
-    notes: answers.notes ?? '',
-    equipment: history.equipment ?? DEFAULTS.equipment,
-    sessionMinutes: history.sessionMinutes ?? DEFAULTS.sessionMinutes,
-    yearsTraining: history.yearsTraining ?? DEFAULTS.yearsTraining,
-  };
-
-  deps.state.profile = profile;
-  deps.state.intake = null;
-  await deps.save();
-
   try {
     const { analysis, block } = await runProgram(deps, { profile, reason: INITIAL_REASON });
     const names = block.sessions.map((session) => session.name).join(', ');
-    deps.state.messages.push(newMessage('assistant', `${analysis}\n\n${OPEN_IN_HEVY}${names}`, { kind: 'plan' }));
+    const tail = turn.path === 'new' ? [LOG_IN_HEVY] : [];
+    deps.state.messages.push(newMessage('assistant', [analysis, `${OPEN_IN_HEVY}${names}`, ...tail].join('\n\n'), { kind: 'plan' }));
   } catch (error) {
     deps.log(`${PLAN_LOG_FAILED}: ${describe(error)}`);
     deps.state.messages.push(newMessage('assistant', PLAN_FAILED));
@@ -161,50 +148,81 @@ async function complete(turn: Turn, answers: Partial<Profile>): Promise<void> {
   await deps.save();
 }
 
-const heldBodyweight = (turn: Turn): number | null => turn.history?.bodyweightKg ?? null;
+/** The profile is saved before the block is written, so a failed plan leaves one they can re-run. */
+async function complete(turn: Turn): Promise<void> {
+  const { answers, deps } = turn;
+  const past = await history(turn);
+  const profile: Profile = {
+    goals: answers.goals?.length ? answers.goals : [...FALLBACK.goals],
+    daysPerWeek: answers.daysPerWeek ?? FALLBACK.daysPerWeek,
+    bodyweightKg: answers.bodyweightKg ?? FALLBACK.bodyweightKg,
+    injuries: answers.injuries ?? [],
+    notes: answers.notes ?? '',
+    equipment: answers.equipment ?? past.equipment ?? DEFAULTS.equipment,
+    sessionMinutes: past.sessionMinutes ?? DEFAULTS.sessionMinutes,
+    yearsTraining: answers.yearsTraining ?? past.yearsTraining ?? DEFAULTS.yearsTraining,
+  };
 
-function nextQuestion(turn: Turn): Question | null {
-  if (turn.step === 'goals') return DAYS_QUESTION;
-  if (turn.step === 'daysPerWeek') return INJURIES_QUESTION;
-  if (turn.step === 'injuries') return bodyweightQuestion(heldBodyweight(turn));
-  return null;
+  deps.state.profile = profile;
+  deps.state.intake = null;
+  await deps.save();
+  await writePlan(turn, profile);
+}
+
+async function finish(turn: Turn): Promise<void> {
+  const next = nextStep(turn.path, turn.step);
+  if (next === null) return complete(turn);
+  // A step is only ever entered after it is asked, so a loop step opens on its own first question.
+  return ask(turn, await questionOf(next, turn));
+}
+
+/** "No, that's it" with nothing chosen would save a profile the coach cannot plan from. */
+function closeLoop(turn: Turn): Promise<void> {
+  if (turn.step === 'goals' && chosen('goals', turn.answers).length === 0) return ask(turn, QUESTIONS.goals, NO_GOALS);
+  return finish(turn);
 }
 
 /** Only the bodyweight confirmation reads the history: its "yes" means the number Hevy holds. */
-function fromChoice(turn: Turn, choice: string | string[]): Answer | null {
+async function fromChoice(turn: Turn, choice: string | string[]): Promise<Answer | null> {
+  const value = Array.isArray(choice) ? choice[0] : choice;
+  if (isLoopStep(turn.step) && value === DONE) return DONE;
   if (turn.step !== 'bodyweight') return answerOf(turn.step, choice);
 
-  const value = Array.isArray(choice) ? choice[0] : choice;
   if (value === CHANGED) return CHANGED;
   if (value !== YES) return null;
-  const held = heldBodyweight(turn);
+  const held = await heldBodyweight(turn);
   return held === null ? null : { bodyweightKg: held };
 }
 
 /** The injury list drops the specifics ("no incline pressing, landmine is fine"), so the words are kept too. */
 function withNotes(answer: Answer | null, text: string): Answer | null {
-  if (answer === null || answer === CHANGED) return answer;
+  if (answer === null || typeof answer === 'string' || isPath(answer)) return answer;
   return { ...answer, notes: text.trim().slice(0, NOTES_MAX) };
 }
 
 /** The model can only repeat the held bodyweight on a typed confirmation if the request carries it. */
 async function fromTyped(turn: Turn, text: string): Promise<Answer | null> {
-  const answer = await interpret(turn.deps, { step: turn.step, heldBodyweightKg: heldBodyweight(turn) }, text);
+  const heldBodyweightKg = turn.step === 'bodyweight' ? await heldBodyweight(turn) : null;
+  const answer = await interpret(turn.deps, { step: turn.step, heldBodyweightKg }, text);
   return turn.step === 'injuries' ? withNotes(answer, text) : answer;
 }
 
 async function advance(turn: Turn, answer: Answer): Promise<void> {
-  if (answer === CHANGED) return ask(turn.deps, VALUE_QUESTION, turn.answers);
+  if (answer === CHANGED) return ask(turn, QUESTIONS.bodyweightValue);
+  if (answer === DONE) return closeLoop(turn);
+  if (isPath(answer)) return finish({ ...turn, path: answer.path });
 
-  const answered = { ...turn.answers, ...answer };
-  const next = nextQuestion(turn);
-  if (next) return ask(turn.deps, next, answered);
-  return complete(turn, answered);
+  const { step } = turn;
+  const answers = merged(turn, answer);
+  if (!isLoopStep(step)) return finish({ ...turn, answers });
+  // An answer that names nothing new closes the loop, the same as tapping "No, that's it" does.
+  const added = chosen(step, answer);
+  if (added.length === 0) return closeLoop({ ...turn, answers });
+  return ask({ ...turn, answers }, loopQuestion(step, answers), `${labelsOf(step, added)}${NOTED}`);
 }
 
-function reAsk(turn: Turn): Promise<void> {
-  const question = turn.step === 'bodyweight' ? bodyweightQuestion(heldBodyweight(turn)) : ASKED[turn.step];
-  return ask(turn.deps, question, turn.answers, UNCLEAR);
+async function reAsk(turn: Turn): Promise<void> {
+  return ask(turn, await questionOf(turn.step, turn), UNCLEAR);
 }
 
 /** A tapped pill is parsed here; anything typed goes to the model, which maps it or reports it unclear. */
@@ -212,13 +230,11 @@ export async function handleIntakeReply(deps: CoachDeps, text: string, choice: s
   const intake = deps.state.intake;
   if (!intake) return;
 
-  const { step, answers } = intake;
   deps.state.messages.push(newMessage('user', text));
   await deps.save();
 
-  const history = HISTORY_STEPS.includes(step) ? await prefill(deps) : null;
-  const turn: Turn = { deps, step, answers, history };
-  const answer = choice === undefined ? await fromTyped(turn, text) : fromChoice(turn, choice);
+  const turn: Turn = { deps, step: intake.step, path: intake.path ?? DEFAULT_PATH, answers: intake.answers, history: null };
+  const answer = choice === undefined ? await fromTyped(turn, text) : await fromChoice(turn, choice);
   if (answer === null) return reAsk(turn);
   return advance(turn, answer);
 }
