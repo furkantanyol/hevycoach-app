@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { CREATE_PROGRAM_TOOL, PLAN_OUTPUT_SCHEMA, VERDICT_OUTPUT_SCHEMA } from './prompt.js';
-import { CARDIO, EQUIPMENT, GOALS, INJURIES, SEXES, TRAINING_STYLES, YEARS_TRAINING, type Profile } from './state.js';
+import { CREATE_PROGRAM_TOOL, PLAN_OUTPUT_SCHEMA } from './prompt.js';
+import { REVIEW_OUTPUT_SCHEMA } from './review-prompt.js';
+import { EQUIPMENT, GOALS, INJURIES, YEARS_TRAINING, type Profile } from './state.js';
 
 const RANGE_KEYWORDS = ['minimum', 'maximum', 'maxItems', 'minItems'];
 
@@ -22,27 +23,19 @@ function everyKey(node: unknown): string[] {
 }
 
 const profile: Profile = {
-  sex: 'male',
-  age: 34,
-  heightCm: 180,
-  bodyweightKg: 82,
   goals: ['muscle', 'strength'],
   daysPerWeek: 4,
-  sessionMinutes: 60,
-  yearsTraining: '3-5',
-  equipment: 'full_gym',
-  trainingStyle: 'hybrid',
-  cardio: 'zone2',
+  bodyweightKg: 82,
   injuries: ['knee', 'shoulder'],
   notes: 'left knee, Hoffa fat pad; travels one week a month',
+  equipment: 'full_gym',
+  sessionMinutes: 60,
+  yearsTraining: '3-5',
 };
 
 const ENUM_FIELDS: [string, readonly string[]][] = [
-  ['sex', SEXES],
-  ['yearsTraining', YEARS_TRAINING],
   ['equipment', EQUIPMENT],
-  ['trainingStyle', TRAINING_STYLES],
-  ['cardio', CARDIO],
+  ['yearsTraining', YEARS_TRAINING],
 ];
 
 function profileSchema(): Record<string, unknown> {
@@ -123,19 +116,19 @@ describe('PLAN_OUTPUT_SCHEMA', () => {
   });
 });
 
-describe('VERDICT_OUTPUT_SCHEMA', () => {
+describe('REVIEW_OUTPUT_SCHEMA', () => {
   it('should use no range keywords the messages API rejects', () => {
-    const keys = everyKey(VERDICT_OUTPUT_SCHEMA);
+    const keys = everyKey(REVIEW_OUTPUT_SCHEMA);
 
     expect(RANGE_KEYWORDS.filter((keyword) => keys.includes(keyword))).toEqual([]);
   });
 
-  it('should require a message and a memory', () => {
-    expect(VERDICT_OUTPUT_SCHEMA.required).toEqual(['message', 'memory']);
+  it('should require a message, a memory and a proposal', () => {
+    expect(REVIEW_OUTPUT_SCHEMA.required).toEqual(['message', 'memory', 'proposal']);
   });
 
   it('should forbid additional properties at every object level', () => {
-    const levels = objectSchemas(VERDICT_OUTPUT_SCHEMA);
+    const levels = objectSchemas(REVIEW_OUTPUT_SCHEMA);
 
     expect(levels.every((level) => level.additionalProperties === false)).toBe(true);
   });

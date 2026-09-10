@@ -1,20 +1,20 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import type { IncomingHttpHeaders } from 'node:http';
 import Fastify, { type FastifyBaseLogger, type FastifyInstance, type FastifyReply, type FastifyServerOptions } from 'fastify';
-import { chatTurn, type CoachDeps, verdict } from './coach.js';
-import { blockView, cacheFor, PREFILL_WORKOUTS, prefillFrom, progressView, RECENT_WORKOUTS, SUMMARY_TTL_MS, validateProfile } from './derived.js';
-import { historySummary, recentWorkouts } from './hevy.js';
+import { APPLY, deliveryOf, deviceToken, messageChoice, messageText, proposalChoice, TEXT_MAX_CHARACTERS } from './body.js';
+import { applyProposal, chatTurn, type CoachDeps, discardProposal, review } from './coach.js';
+import { RECENT_WORKOUTS, weekView } from './derived.js';
+import { recentWorkouts } from './hevy.js';
+import { ensureOpener, handleIntakeReply, intakeActive } from './intake.js';
 import { sendPush } from './push.js';
 import type { State } from './state.js';
+import { newMessage } from './thread.js';
 
 const HEALTH_PATH = '/health';
 const WEBHOOK_PATH = '/webhook/hevy';
 const MESSAGES_PATH = '/messages';
 const DEVICE_PATH = '/device';
-const PREFILL_PATH = '/prefill';
-const PROFILE_PATH = '/profile';
-const BLOCK_PATH = '/block';
-const PROGRESS_PATH = '/progress';
+const WEEK_PATH = '/week';
 
 const OK = 200;
 const NO_CONTENT = 204;
@@ -23,10 +23,9 @@ const UNAUTHORIZED = 401;
 const NOT_CONFIGURED = 503;
 
 export const SEEN_EVENTS_MAX = 200;
-const TEXT_MAX_CHARACTERS = 4000;
 const BEARER = 'Bearer ';
 const COACH_ERROR = '\n[coach error] ';
-const PUSH_TITLE_FALLBACK = 'Session logged';
+const REVIEW_PUSH_TITLE = 'Review of your workout is ready';
 const PUSH_DATA = { url: '/' };
 const FIRST_DELIVERY = 'first hevy delivery';
 const TURN_COMPLETED = 'chat turn completed';
@@ -40,6 +39,27 @@ const STREAM_HEADERS = {
   'transfer-encoding': 'chunked',
 };
 
+/** Everything a route hands to the coach. Tests replace the ones they exercise; the rest stay live. */
+export interface Handlers {
+  turn: typeof chatTurn;
+  review: typeof review;
+  opener: typeof ensureOpener;
+  intakeReply: typeof handleIntakeReply;
+  apply: typeof applyProposal;
+  discard: typeof discardProposal;
+  push: typeof sendPush;
+}
+
+const LIVE: Handlers = {
+  turn: chatTurn,
+  review,
+  opener: ensureOpener,
+  intakeReply: handleIntakeReply,
+  apply: applyProposal,
+  discard: discardProposal,
+  push: sendPush,
+};
+
 export interface RouteDeps {
   state: State;
   save: () => Promise<void>;
@@ -47,45 +67,16 @@ export interface RouteDeps {
   appToken?: string;
   webhookSecret?: string;
   pushToken: () => string | null;
-  /** Test seams: the routes call the real coach, clock and logger unless these are supplied. */
-  turn?: typeof chatTurn;
-  judge?: typeof verdict;
+  handlers?: Partial<Handlers>;
   logger?: FastifyBaseLogger;
-  now?: () => number;
 }
 
-interface Delivery {
-  id: string;
-  workoutId: string;
+function handlersOf(deps: RouteDeps): Handlers {
+  return { ...LIVE, ...deps.handlers };
 }
 
 function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-function messageText(body: unknown): string | null {
-  if (typeof body !== 'object' || body === null) return null;
-  const { text } = body as { text?: unknown };
-  if (typeof text !== 'string') return null;
-  const trimmed = text.trim();
-  if (trimmed.length === 0 || trimmed.length > TEXT_MAX_CHARACTERS) return null;
-  return trimmed;
-}
-
-function deviceToken(body: unknown): string | null {
-  if (typeof body !== 'object' || body === null) return null;
-  const { expoPushToken } = body as { expoPushToken?: unknown };
-  if (typeof expoPushToken !== 'string' || expoPushToken.length === 0) return null;
-  return expoPushToken;
-}
-
-function deliveryOf(body: unknown): Delivery | null {
-  if (typeof body !== 'object' || body === null) return null;
-  const { id, payload } = body as { id?: unknown; payload?: unknown };
-  if (typeof id !== 'string' || typeof payload !== 'object' || payload === null) return null;
-  const { workoutId } = payload as { workoutId?: unknown };
-  if (typeof workoutId !== 'string') return null;
-  return { id, workoutId };
 }
 
 /** The authorization header carries WEBHOOK_SECRET, so it never reaches a log record. */
@@ -114,6 +105,25 @@ function remember(state: State, id: string): void {
   if (overflow > 0) state.seenEvents.splice(0, overflow);
 }
 
+/** The pill the athlete tapped is their turn in the thread, ahead of whatever the coach answers. */
+async function rememberReply(deps: RouteDeps, text: string): Promise<void> {
+  deps.state.messages.push(newMessage('user', text));
+  await deps.save();
+}
+
+function lastCoachText(state: State): string {
+  const last = state.messages.at(-1);
+  return last?.role === 'assistant' ? last.text : '';
+}
+
+function openStream(reply: FastifyReply): (chunk: string) => void {
+  reply.hijack();
+  reply.raw.writeHead(OK, STREAM_HEADERS);
+  return (chunk: string) => {
+    reply.raw.write(chunk);
+  };
+}
+
 /** chatTurn tags the message it saved, so a turn that wrote a block leaves a plan message last. */
 function turnRecord(deps: RouteDeps, startedAt: number): { ms: number; planned: boolean } {
   return { ms: Date.now() - startedAt, planned: deps.coach.state.messages.at(-1)?.kind === 'plan' };
@@ -121,37 +131,46 @@ function turnRecord(deps: RouteDeps, startedAt: number): { ms: number; planned: 
 
 /** Fastify logs no "request completed" line for a hijacked reply, so the turn logs its own. */
 async function streamTurn(deps: RouteDeps, reply: FastifyReply, text: string): Promise<void> {
-  reply.hijack();
-  reply.raw.writeHead(OK, STREAM_HEADERS);
+  const write = openStream(reply);
   const startedAt = Date.now();
   try {
-    await (deps.turn ?? chatTurn)(deps.coach, text, (chunk) => {
-      reply.raw.write(chunk);
-    });
+    await handlersOf(deps).turn(deps.coach, text, write);
     reply.log.info(turnRecord(deps, startedAt), TURN_COMPLETED);
   } catch (error) {
-    reply.raw.write(`${COACH_ERROR}${describe(error)}`);
+    write(`${COACH_ERROR}${describe(error)}`);
     reply.log.info(turnRecord(deps, startedAt), `${TURN_FAILED}: ${describe(error)}`);
   }
   reply.raw.end();
 }
 
-async function notify(deps: RouteDeps, log: FastifyBaseLogger, workoutId: string): Promise<void> {
+/** The scripted branches write one finished message; the app reads the same text/plain stream. */
+async function streamMessage(reply: FastifyReply, produce: () => Promise<string>): Promise<void> {
+  const write = openStream(reply);
   try {
-    const result = await (deps.judge ?? verdict)(deps.coach, workoutId);
+    write(await produce());
+  } catch (error) {
+    write(`${COACH_ERROR}${describe(error)}`);
+    reply.log.info(`${TURN_FAILED}: ${describe(error)}`);
+  }
+  reply.raw.end();
+}
+
+async function notify(deps: RouteDeps, log: FastifyBaseLogger, workoutId: string): Promise<void> {
+  const handlers = handlersOf(deps);
+  try {
+    const result = await handlers.review(deps.coach, workoutId);
     if (!result) return;
 
     const token = deps.pushToken();
     if (!token) {
-      log.info('verdict written, no push token registered');
+      log.info('review written, no push token registered');
       return;
     }
 
-    const title = result.sessionName ?? PUSH_TITLE_FALLBACK;
-    const sent = await sendPush(token, title, result.pushBody, PUSH_DATA);
-    log.info(sent.sent ? 'verdict push sent' : `verdict push failed: ${sent.error ?? 'unknown'}`);
+    const sent = await handlers.push(token, REVIEW_PUSH_TITLE, result.pushBody, PUSH_DATA);
+    log.info(sent.sent ? 'review push sent' : `review push failed: ${sent.error ?? 'unknown'}`);
   } catch (error) {
-    log.error(`verdict failed for workout ${workoutId}: ${describe(error)}`);
+    log.error(`review failed for workout ${workoutId}: ${describe(error)}`);
   }
 }
 
@@ -170,10 +189,36 @@ function appTokenHook(app: FastifyInstance, appToken: string | undefined): void 
   });
 }
 
+/** Three branches, one stream: a pending proposal answered, the intake script, or an ordinary turn. */
+function postMessage(deps: RouteDeps, reply: FastifyReply, text: string, choice: string | string[] | undefined) {
+  const handlers = handlersOf(deps);
+  const answered = proposalChoice(deps.state, choice);
+
+  if (answered) {
+    return streamMessage(reply, async () => {
+      await rememberReply(deps, text);
+      const decided = answered === APPLY ? handlers.apply : handlers.discard;
+      return (await decided(deps.coach)).text;
+    });
+  }
+
+  if (intakeActive(deps.state)) {
+    return streamMessage(reply, async () => {
+      await handlers.intakeReply(deps.coach, text, choice);
+      return lastCoachText(deps.state);
+    });
+  }
+
+  return streamTurn(deps, reply, text);
+}
+
 function appRoutes(app: FastifyInstance, deps: RouteDeps): void {
   app.get(HEALTH_PATH, async () => ({ ok: true }));
 
-  app.get(MESSAGES_PATH, async () => deps.state.messages);
+  app.get(MESSAGES_PATH, async () => {
+    await handlersOf(deps).opener(deps.coach);
+    return deps.state.messages;
+  });
 
   app.post(MESSAGES_PATH, async (request, reply) => {
     const text = messageText(request.body);
@@ -181,7 +226,7 @@ function appRoutes(app: FastifyInstance, deps: RouteDeps): void {
       const error = `text must be a non-empty string of at most ${TEXT_MAX_CHARACTERS} characters`;
       return reply.code(BAD_REQUEST).send({ error });
     }
-    return streamTurn(deps, reply, text);
+    return postMessage(deps, reply, text, messageChoice(request.body));
   });
 
   app.post(DEVICE_PATH, async (request, reply) => {
@@ -193,33 +238,9 @@ function appRoutes(app: FastifyInstance, deps: RouteDeps): void {
     await deps.save();
     return reply.code(NO_CONTENT).send();
   });
-}
 
-/** The summary walks every workout page, so /prefill and /progress share one cached read. */
-function dataRoutes(app: FastifyInstance, deps: RouteDeps): void {
-  const { hevy } = deps.coach;
-  const summary = cacheFor(SUMMARY_TTL_MS, () => historySummary(hevy), deps.now);
-
-  app.get(PREFILL_PATH, async () =>
-    prefillFrom(await summary(), await recentWorkouts(hevy, PREFILL_WORKOUTS)),
-  );
-
-  app.get(PROFILE_PATH, async () => ({ profile: deps.state.profile }));
-
-  app.put(PROFILE_PATH, async (request, reply) => {
-    const result = validateProfile(request.body);
-    if ('error' in result) return reply.code(BAD_REQUEST).send({ error: result.error });
-    deps.state.profile = result.profile;
-    await deps.save();
-    return { profile: result.profile };
-  });
-
-  app.get(BLOCK_PATH, async () =>
-    blockView(deps.state.block, await recentWorkouts(hevy, RECENT_WORKOUTS), deps.state.messages),
-  );
-
-  app.get(PROGRESS_PATH, async () =>
-    progressView(await summary(), await recentWorkouts(hevy, RECENT_WORKOUTS)),
+  app.get(WEEK_PATH, async () =>
+    weekView(deps.state.block, await recentWorkouts(deps.coach.hevy, RECENT_WORKOUTS)),
   );
 }
 
@@ -266,7 +287,6 @@ export function buildApp(deps: RouteDeps): FastifyInstance {
 
   appTokenHook(app, deps.appToken);
   appRoutes(app, deps);
-  dataRoutes(app, deps);
   webhookRoute(app, deps);
 
   return app;

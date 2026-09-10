@@ -1,12 +1,43 @@
 import type Anthropic from '@anthropic-ai/sdk';
-import { contextBlock, CREATE_PROGRAM_TOOL, PLAN_OUTPUT_SCHEMA, SYSTEM_PROMPT, untrusted, VERDICT_OUTPUT_SCHEMA } from './prompt.js';
+import { contextBlock, CREATE_PROGRAM_TOOL, PLAN_OUTPUT_SCHEMA, SYSTEM_PROMPT, untrusted } from './prompt.js';
+import { REVIEW_OUTPUT_SCHEMA } from './review-prompt.js';
 import type { Message, State } from './state.js';
 
 export const CONTEXT_MESSAGES = 30;
 
 const PLAN_MAX_TOKENS = 16_000;
 const CHAT_MAX_TOKENS = 64_000;
-const VERDICT_MAX_TOKENS = 4_000;
+const REVIEW_MAX_TOKENS = 4_000;
+
+const NO_ARGUMENTS: Anthropic.Tool['input_schema'] = {
+  type: 'object',
+  properties: {},
+  required: [],
+  additionalProperties: false,
+};
+
+export const APPLY_PROPOSAL_TOOL: Anthropic.Tool = {
+  name: 'apply_proposal',
+  description:
+    "Write the pending proposal into the athlete's Hevy account: the guard checks the numbers, the routine for that session is updated, and the block is updated to match. Call it when they agree to the change.",
+  strict: true,
+  input_schema: NO_ARGUMENTS,
+};
+
+export const DISCARD_PROPOSAL_TOOL: Anthropic.Tool = {
+  name: 'discard_proposal',
+  description:
+    'Drop the pending proposal and leave Hevy exactly as it is. Call it when they turn the change down or want the session kept as written.',
+  strict: true,
+  input_schema: NO_ARGUMENTS,
+};
+
+export function textOf(message: Anthropic.Message): string {
+  return message.content
+    .filter((block): block is Anthropic.TextBlock => block.type === 'text')
+    .map((block) => block.text)
+    .join('');
+}
 
 export function toAnthropicMessages(messages: Message[]): Anthropic.MessageParam[] {
   const recent = messages.slice(-CONTEXT_MESSAGES);
@@ -26,9 +57,15 @@ function systemBlocks(state: State): Anthropic.TextBlockParam[] {
   ];
 }
 
-/** The recent thread, then the task last, so a plan or a verdict sees what was just said. */
+/** The recent thread, then the task last, so a plan or a review sees what was just said. */
 function taskMessages(state: State, task: string): Anthropic.MessageParam[] {
   return [...toAnthropicMessages(state.messages), { role: 'user', content: task }];
+}
+
+/** Answering a proposal is offered only while one is pending, so a stray call can never reach Hevy. */
+function chatTools(state: State): Anthropic.Tool[] {
+  if (!state.pendingProposal) return [CREATE_PROGRAM_TOOL];
+  return [CREATE_PROGRAM_TOOL, APPLY_PROPOSAL_TOOL, DISCARD_PROPOSAL_TOOL];
 }
 
 export function planRequest(state: State, model: string, task: string): Anthropic.MessageCreateParamsNonStreaming {
@@ -48,17 +85,17 @@ export function chatRequest(state: State, model: string, messages: Anthropic.Mes
     thinking: { type: 'adaptive' },
     output_config: { effort: 'medium' },
     system: systemBlocks(state),
-    tools: [CREATE_PROGRAM_TOOL],
+    tools: chatTools(state),
     messages,
   };
 }
 
-export function verdictRequest(state: State, model: string, task: string): Anthropic.MessageCreateParamsNonStreaming {
+export function reviewRequest(state: State, model: string, task: string): Anthropic.MessageCreateParamsNonStreaming {
   return {
     model,
-    max_tokens: VERDICT_MAX_TOKENS,
+    max_tokens: REVIEW_MAX_TOKENS,
     thinking: { type: 'adaptive' },
-    output_config: { effort: 'medium', format: { type: 'json_schema', schema: VERDICT_OUTPUT_SCHEMA } },
+    output_config: { effort: 'medium', format: { type: 'json_schema', schema: REVIEW_OUTPUT_SCHEMA } },
     system: systemBlocks(state),
     messages: taskMessages(state, task),
   };

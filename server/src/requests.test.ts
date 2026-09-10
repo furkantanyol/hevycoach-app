@@ -1,7 +1,16 @@
+import type Anthropic from '@anthropic-ai/sdk';
 import { describe, expect, it } from 'vitest';
 import { USER_INPUT_CLOSE, USER_INPUT_OPEN } from './prompt.js';
-import { CONTEXT_MESSAGES, toAnthropicMessages } from './requests.js';
-import type { Message } from './state.js';
+import { chatRequest, CONTEXT_MESSAGES, toAnthropicMessages } from './requests.js';
+import { emptyState, type Message, type PendingProposal } from './state.js';
+
+const CHAT_MODEL = 'chat-model';
+const PENDING: PendingProposal = { sessionIndex: 0, exercises: [], messageId: 'm-1' };
+
+const toolNames = (pendingProposal: PendingProposal | null): string[] =>
+  (chatRequest({ ...emptyState(), pendingProposal }, CHAT_MODEL, []).tools ?? [])
+    .filter((tool): tool is Anthropic.Tool => 'name' in tool)
+    .map((tool) => tool.name);
 
 const said = (role: Message['role'], text: string): Message => ({
   id: `${role}-${text}`,
@@ -41,5 +50,15 @@ describe('toAnthropicMessages', () => {
 
   it('should return nothing when the window holds no user message', () => {
     expect(toAnthropicMessages([said('assistant', 'verdict')])).toEqual([]);
+  });
+});
+
+describe('chatRequest', () => {
+  it('should offer only create_program when no proposal is pending', () => {
+    expect(toolNames(null)).toEqual(['create_program']);
+  });
+
+  it('should offer the two answers to a proposal while one is pending', () => {
+    expect(toolNames(PENDING)).toEqual(['create_program', 'apply_proposal', 'discard_proposal']);
   });
 });

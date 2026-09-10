@@ -1,0 +1,120 @@
+import type { CoachDeps } from './coach.js';
+import { checkBlock, type Violation } from './guard.js';
+import { formatCatalogue, formatHistory, type HistorySummary, historySummary, type TemplateOption, templateCatalogue, writeRoutines } from './hevy.js';
+import { planTask } from './prompt.js';
+import { planRequest, textOf } from './requests.js';
+import { isProfile, type Block, type Exercise, type Profile } from './state.js';
+
+const GUARD_RETRY = 'The guard rejected that block. Fix every violation below and return the whole block again.';
+const GUARD_FAILED = 'The plan broke the guard twice and was not written:';
+const EMPTY_BLOCK = 'plan attempt returned an empty block';
+/** Enough of the analysis to see what the model was trying to say instead of planning. */
+const ANALYSIS_LOG_MAX = 300;
+
+export interface ProgramInput {
+  profile: Profile;
+  reason: string;
+}
+
+interface PlanResult {
+  analysis: string;
+  block: { name: string; weeks: number; sessions: { name: string; focus: string; exercises: Exercise[] }[] };
+}
+
+interface Attempt {
+  analysis: string;
+  block: Block;
+  violations: Violation[];
+}
+
+interface PlanRun {
+  deps: CoachDeps;
+  summary: HistorySummary;
+  catalogue: TemplateOption[];
+  reason: string;
+}
+
+function violationLines(violations: Violation[]): string {
+  return violations.map((entry) => `- ${entry.session} / ${entry.exercise}: ${entry.reason}`).join('\n');
+}
+
+function toBlock(plan: PlanResult, previous: Block | null, reason: string): Block {
+  return {
+    name: plan.block.name,
+    weeks: plan.block.weeks,
+    createdAt: new Date().toISOString(),
+    reason,
+    sessions: plan.block.sessions.map((session, index) => ({
+      ...session,
+      hevyRoutineId: previous?.sessions[index]?.hevyRoutineId ?? null,
+    })),
+  };
+}
+
+async function planCall(deps: CoachDeps, task: string): Promise<PlanResult> {
+  const message = await deps.anthropic.messages.create(planRequest(deps.state, deps.models.plan, task));
+  return JSON.parse(textOf(message)) as PlanResult;
+}
+
+/** The shapes the guard reads as an empty block: no name, no sessions, or a session with nothing in it. */
+function isEmptyBlock(block: Block): boolean {
+  if (block.name.trim().length === 0) return true;
+  if (block.sessions.length === 0) return true;
+  return block.sessions.some((session) => session.exercises.length === 0);
+}
+
+/** An empty block usually means the model wanted to say something instead of planning; the words land in the analysis, which nothing else surfaces. */
+function logEmptyBlock(deps: CoachDeps, analysis: string, block: Block): void {
+  const exercises = block.sessions.reduce((total, session) => total + session.exercises.length, 0);
+  const counts = `sessions: ${block.sessions.length}, exercises: ${exercises}`;
+  deps.log(`${EMPTY_BLOCK} (${counts}): ${analysis.slice(0, ANALYSIS_LOG_MAX)}`);
+}
+
+async function attempt(run: PlanRun, task: string): Promise<Attempt> {
+  const plan = await planCall(run.deps, task);
+  const block = toBlock(plan, run.deps.state.block, run.reason);
+  if (isEmptyBlock(block)) logEmptyBlock(run.deps, plan.analysis, block);
+  return { analysis: plan.analysis, block, violations: checkBlock(block, run.summary, run.catalogue) };
+}
+
+async function approvedPlan(run: PlanRun, task: string): Promise<Attempt> {
+  const first = await attempt(run, task);
+  if (first.violations.length === 0) return first;
+
+  const second = await attempt(run, `${task}\n\n${GUARD_RETRY}\n${violationLines(first.violations)}`);
+  if (second.violations.length > 0) {
+    throw new Error(`${GUARD_FAILED}\n${violationLines(second.violations)}`);
+  }
+  return second;
+}
+
+function blockSummary(block: Block): string {
+  const names = block.sessions.map((session) => session.name).join(', ');
+  const count = block.sessions.length;
+  return `Written to Hevy: ${block.name}, ${count} session${count === 1 ? '' : 's'} — ${names}.`;
+}
+
+export async function createProgram(deps: CoachDeps, input: ProgramInput): Promise<string> {
+  const summary = await historySummary(deps.hevy);
+  const catalogue = await templateCatalogue(deps.hevy, summary);
+  const run: PlanRun = { deps, summary, catalogue, reason: input.reason };
+  const task = planTask(input.profile, formatHistory(summary), formatCatalogue(catalogue), input.reason);
+
+  const plan = await approvedPlan(run, task);
+  const block = await writeRoutines(deps.hevy, plan.block);
+
+  deps.state.profile = input.profile;
+  deps.state.block = block;
+  await deps.save();
+
+  return `${plan.analysis}\n\n${blockSummary(block)}`;
+}
+
+/** `strict` should keep the model inside the schema; this rejects the call rather than trusting it, since the profile is written to state. */
+export function programInput(input: unknown): ProgramInput | null {
+  if (typeof input !== 'object' || input === null) return null;
+  const { profile, reason } = input as { profile?: unknown; reason?: unknown };
+  if (typeof reason !== 'string') return null;
+  if (!isProfile(profile)) return null;
+  return { profile, reason };
+}

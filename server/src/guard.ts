@@ -22,8 +22,8 @@ interface Range {
 
 const CAP_DECIMAL_PLACES = 2;
 const SESSIONS: Range = { min: MIN_SESSIONS, max: MAX_SESSIONS };
-/** Block-level violations have no exercise to name, so they carry this in place of one. */
-const BLOCK_SCOPE = 'block';
+/** Block-level violations have no exercise to name, so they carry this in place of one; the review filters on it. */
+export const BLOCK_SCOPE = 'block';
 const EMPTY_NAME = 'the block name is empty';
 const EMPTY_SESSION = 'the session has no exercises';
 

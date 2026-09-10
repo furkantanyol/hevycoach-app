@@ -5,14 +5,17 @@ import type { Profile } from './state.js';
 const REASON = 'intake answered';
 
 const PROFILE: Profile = {
-  sex: 'female', age: 29, heightCm: 168, bodyweightKg: 63,
   goals: ['muscle', 'longevity'],
-  daysPerWeek: 4, sessionMinutes: 45, yearsTraining: '1-3',
-  equipment: 'home_gym', trainingStyle: 'bodybuilding', cardio: 'zone2',
-  injuries: ['shoulder'], notes: 'right shoulder aches on overhead work',
+  daysPerWeek: 4,
+  bodyweightKg: 63,
+  injuries: ['shoulder'],
+  notes: 'right shoulder aches on overhead work',
+  equipment: 'home_gym',
+  sessionMinutes: 45,
+  yearsTraining: '1-3',
 };
 
-/** The profile shape saved before the structured onboarding amendment. */
+/** The profile shape saved before structured onboarding. */
 const OLD_PROFILE = {
   goal: 'get stronger',
   daysPerWeek: 4,
@@ -68,12 +71,12 @@ describe('programInput', () => {
     expect(programInput(called(incomplete))).toBeNull();
   });
 
-  it('should reject a profile in the old shape', () => {
-    expect(programInput(called(OLD_PROFILE))).toBeNull();
+  it('should reject a bodyweight that came back as a string', () => {
+    expect(programInput(called({ ...PROFILE, bodyweightKg: '82' }))).toBeNull();
   });
 
-  it('should reject an age that came back as a string', () => {
-    expect(programInput(called({ ...PROFILE, age: '34' }))).toBeNull();
+  it('should reject a profile in the old shape', () => {
+    expect(programInput(called(OLD_PROFILE))).toBeNull();
   });
 
   it('should reject a reason that is not text', () => {

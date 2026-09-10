@@ -2,55 +2,40 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export const SEXES = ['male', 'female', 'other'] as const;
 export const GOALS = ['muscle', 'strength', 'fat_loss', 'longevity', 'athletic'] as const;
 export const YEARS_TRAINING = ['<1', '1-3', '3-5', '5+'] as const;
 export const EQUIPMENT = ['full_gym', 'home_gym', 'dumbbells', 'bodyweight'] as const;
-export const TRAINING_STYLES = ['powerlifting', 'bodybuilding', 'hybrid', 'athletic'] as const;
-export const CARDIO = ['none', 'zone2', 'hiit', 'both'] as const;
 export const INJURIES = ['knee', 'shoulder', 'lower_back', 'elbow_wrist', 'hip', 'other'] as const;
 
-export type Sex = (typeof SEXES)[number];
 export type Goal = (typeof GOALS)[number];
 export type YearsTraining = (typeof YEARS_TRAINING)[number];
 export type Equipment = (typeof EQUIPMENT)[number];
-export type TrainingStyle = (typeof TRAINING_STYLES)[number];
-export type Cardio = (typeof CARDIO)[number];
 export type Injury = (typeof INJURIES)[number];
 
+/** The scripted intake asks for the first five fields; the last three come from the Hevy history. */
 export interface Profile {
-  sex: Sex;
-  age: number;
-  heightCm: number;
-  bodyweightKg: number;
-  /** At least one, no duplicates: one multi-select in onboarding, so muscle and strength together replace the goal that combined them. */
+  /** At least one, no duplicates. */
   goals: Goal[];
   daysPerWeek: number;
+  bodyweightKg: number;
+  injuries: Injury[];
+  /** Free text the athlete wrote: untrusted. */
+  notes: string;
+  equipment: Equipment;
   sessionMinutes: number;
   yearsTraining: YearsTraining;
-  equipment: Equipment;
-  trainingStyle: TrainingStyle;
-  cardio: Cardio;
-  injuries: Injury[];
-  /** Free text for injury detail and anything else the athlete wrote: untrusted. */
-  notes: string;
 }
 
-/** Every profile field, in onboarding order; the tool schema and the validators read it so the three cannot drift. */
+/** Every profile field, in intake order; the tool schema reads it so the two cannot drift. */
 export const PROFILE_KEYS = [
-  'sex',
-  'age',
-  'heightCm',
-  'bodyweightKg',
   'goals',
   'daysPerWeek',
-  'sessionMinutes',
-  'yearsTraining',
-  'equipment',
-  'trainingStyle',
-  'cardio',
+  'bodyweightKg',
   'injuries',
   'notes',
+  'equipment',
+  'sessionMinutes',
+  'yearsTraining',
 ] as const satisfies readonly (keyof Profile)[];
 
 function isOption<T extends string>(options: readonly T[], value: unknown): value is T {
@@ -66,24 +51,19 @@ function isGoalList(value: unknown): value is Goal[] {
   return isOptionList(GOALS, value) && value.length > 0 && new Set(value).size === value.length;
 }
 
-/** Shallow: every field present, every union member known. Ranges belong to the route that accepts the profile. */
+/** Shallow: every field present, every union member known. Ranges belong to the intake that fills it. */
 export function isProfile(value: unknown): value is Profile {
   if (typeof value !== 'object' || value === null) return false;
   const candidate = value as Record<string, unknown>;
   return (
-    isOption(SEXES, candidate.sex) &&
-    Number.isFinite(candidate.age) &&
-    Number.isFinite(candidate.heightCm) &&
-    Number.isFinite(candidate.bodyweightKg) &&
     isGoalList(candidate.goals) &&
     Number.isFinite(candidate.daysPerWeek) &&
-    Number.isFinite(candidate.sessionMinutes) &&
-    isOption(YEARS_TRAINING, candidate.yearsTraining) &&
-    isOption(EQUIPMENT, candidate.equipment) &&
-    isOption(TRAINING_STYLES, candidate.trainingStyle) &&
-    isOption(CARDIO, candidate.cardio) &&
+    Number.isFinite(candidate.bodyweightKg) &&
     isOptionList(INJURIES, candidate.injuries) &&
-    typeof candidate.notes === 'string'
+    typeof candidate.notes === 'string' &&
+    isOption(EQUIPMENT, candidate.equipment) &&
+    Number.isFinite(candidate.sessionMinutes) &&
+    isOption(YEARS_TRAINING, candidate.yearsTraining)
   );
 }
 
@@ -112,16 +92,43 @@ export interface Block {
   reason: string;
 }
 
+/** One pill under the last coach message: the label is shown, the value is sent back. */
+export interface Choice {
+  label: string;
+  value: string;
+}
+
 export interface Message {
   id: string;
   role: 'user' | 'assistant';
   text: string;
   createdAt: string;
-  kind?: 'plan' | 'verdict';
+  kind?: 'plan' | 'review';
+  choices?: Choice[];
+  /** True when the pills toggle and a Done pill sends every chosen value at once. */
+  multi?: boolean;
   /** Snapshot of the block this turn wrote; set on plan messages. */
   block?: Block;
-  /** Name of the block session the workout matched; set on verdict messages. */
+  /** Name of the block session the workout matched; set on review messages. */
   session?: string;
+}
+
+/** Exported like the other option lists: the app labels a step, and the type is derived from it. */
+export const INTAKE_STEPS = ['goals', 'daysPerWeek', 'injuries', 'bodyweight', 'bodyweightValue'] as const;
+
+export type IntakeStep = (typeof INTAKE_STEPS)[number];
+
+/** The scripted intake in flight: the question waiting for an answer, and what has been answered. */
+export interface IntakeState {
+  step: IntakeStep;
+  answers: Partial<Profile>;
+}
+
+/** A change the coach proposed after a workout; nothing reaches Hevy until the athlete accepts it. */
+export interface PendingProposal {
+  sessionIndex: number;
+  exercises: Exercise[];
+  messageId: string;
 }
 
 export interface State {
@@ -131,11 +138,15 @@ export interface State {
   messages: Message[];
   pushToken: string | null;
   seenEvents: string[];
+  intake: IntakeState | null;
+  pendingProposal: PendingProposal | null;
 }
 
 export const DEFAULT_STATE_PATH = fileURLToPath(new URL('../data/state.json', import.meta.url));
 
 const JSON_INDENT = 2;
+/** What a review message was called before the one-screen amendment. */
+const OLD_REVIEW_KIND = 'verdict';
 
 export function emptyState(): State {
   return {
@@ -145,6 +156,8 @@ export function emptyState(): State {
     messages: [],
     pushToken: null,
     seenEvents: [],
+    intake: null,
+    pendingProposal: null,
   };
 }
 
@@ -152,11 +165,27 @@ function isMissingFile(error: unknown): boolean {
   return error instanceof Error && 'code' in error && error.code === 'ENOENT';
 }
 
-/** A profile saved before structured onboarding no longer matches `Profile`; it is dropped so onboarding runs again instead of the server serving a shape nothing can read. */
+function asReview(message: Message): Message {
+  const kind: string | undefined = message.kind;
+  if (kind !== OLD_REVIEW_KIND) return message;
+  return { ...message, kind: 'review' };
+}
+
+/**
+ * A profile saved before the reduced shape no longer matches `Profile`, so it is dropped and intake
+ * runs again instead of the server serving a shape nothing can read. Fields added after a save load as null.
+ */
 export async function loadState(path: string = DEFAULT_STATE_PATH): Promise<State> {
   try {
     const saved = JSON.parse(await readFile(path, 'utf8')) as State;
-    return { ...saved, profile: isProfile(saved.profile) ? saved.profile : null };
+    return {
+      ...emptyState(),
+      ...saved,
+      profile: isProfile(saved.profile) ? saved.profile : null,
+      messages: (saved.messages ?? []).map(asReview),
+      intake: saved.intake ?? null,
+      pendingProposal: saved.pendingProposal ?? null,
+    };
   } catch (error) {
     if (isMissingFile(error)) return emptyState();
     throw error;

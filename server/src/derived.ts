@@ -1,8 +1,8 @@
 import type { Workout } from '@furkantanyol/hevy-client';
 import type { ExerciseHistory, HistorySummary } from './hevy.js';
-import { CARDIO, EQUIPMENT, GOALS, INJURIES, SEXES, TRAINING_STYLES, YEARS_TRAINING } from './state.js';
-import type { Block, Message, Profile } from './state.js';
+import type { Block, Profile } from './state.js';
 
+/** What the history answers on its own, so intake never asks for it. Each field is null when Hevy has no evidence. */
 export interface Prefill {
   bodyweightKg: number | null;
   daysPerWeek: number | null;
@@ -13,27 +13,11 @@ export interface Prefill {
   firstWorkout: string | null;
 }
 
-/** `verdict` is the coach's text for that session, null until a verdict message names it. */
-export interface Completion {
-  completedAt: string;
-  verdict: string | null;
+export interface WeekView {
+  workoutsThisWeek: number;
+  lastWorkout: { title: string; at: string } | null;
+  nextSession: string | null;
 }
-
-export interface BlockView {
-  block: Block | null;
-  nextSessionIndex: number | null;
-  completions: Record<number, Completion>;
-}
-
-export interface ProgressView {
-  workouts: number;
-  firstWorkout: string | null;
-  lastWorkout: string | null;
-  thisWeek: number;
-  lifts: ExerciseHistory[];
-}
-
-export type ProfileResult = { profile: Profile } | { error: string };
 
 interface Range {
   min: number;
@@ -42,22 +26,14 @@ interface Range {
 
 /** Eight weeks of training at the highest allowed frequency, so the window is never cut short. */
 export const PREFILL_WORKOUTS = 60;
-/** The spec's window for /block completions, and wide enough for /progress's week count. */
+/** The window /week reads: wide enough for this week's count and for the last routine the athlete ran. */
 export const RECENT_WORKOUTS = 30;
-export const SUMMARY_TTL_MS = 600_000;
-export const NOTES_MAX_CHARACTERS = 1000;
 
-const RANGES: Record<'age' | 'heightCm' | 'bodyweightKg' | 'daysPerWeek' | 'sessionMinutes', Range> = {
-  age: { min: 13, max: 100 },
-  heightCm: { min: 120, max: 230 },
-  bodyweightKg: { min: 30, max: 250 },
-  daysPerWeek: { min: 1, max: 7 },
-  sessionMinutes: { min: 20, max: 180 },
-};
+const DAYS_PER_WEEK_RANGE: Range = { min: 1, max: 7 };
+const SESSION_MINUTES_RANGE: Range = { min: 20, max: 180 };
 
 const DURATION_WORKOUTS = 20;
 const PREFILL_WEEKS = 8;
-const TOP_LIFTS = 15;
 const MINUTES_STEP = 15;
 const DAYS_PER_WEEK = 7;
 const SUNDAY_SHIFT = 6;
@@ -77,7 +53,7 @@ const YEAR_BUCKETS: { readonly under: number; readonly label: Profile['yearsTrai
 ];
 const LONGEST_TRAINING: Profile['yearsTraining'] = '5+';
 
-/** Prefills are clamped to the same range PUT /profile accepts, so onboarding never opens on a value it would reject. */
+/** Prefills are clamped to what the profile accepts, so a wild history never becomes a wild default. */
 const clamp = (value: number, { min, max }: Range): number => Math.min(Math.max(value, min), max);
 
 const startedAt = (workout: Workout): number => Date.parse(workout.start_time);
@@ -89,7 +65,7 @@ function sessionsPerWeek(recent: Workout[], now: number): number | null {
   const since = now - PREFILL_WEEKS * DAYS_PER_WEEK * MS_PER_DAY;
   const sessions = recent.filter((workout) => startedAt(workout) >= since).length;
   if (sessions === 0) return null;
-  return clamp(Math.round(sessions / PREFILL_WEEKS), RANGES.daysPerWeek);
+  return clamp(Math.round(sessions / PREFILL_WEEKS), DAYS_PER_WEEK_RANGE);
 }
 
 function medianMinutes(workouts: Workout[]): number | null {
@@ -106,7 +82,7 @@ function medianMinutes(workouts: Workout[]): number | null {
 function sessionMinutes(recent: Workout[]): number | null {
   const median = medianMinutes(newestFirst(recent).slice(0, DURATION_WORKOUTS));
   if (median === null) return null;
-  return clamp(Math.round(median / MINUTES_STEP) * MINUTES_STEP, RANGES.sessionMinutes);
+  return clamp(Math.round(median / MINUTES_STEP) * MINUTES_STEP, SESSION_MINUTES_RANGE);
 }
 
 function yearsTrainingFrom(firstWorkout: string | null, now: number): Profile['yearsTraining'] | null {
@@ -137,44 +113,6 @@ export function prefillFrom(summary: HistorySummary, recent: Workout[]): Prefill
   };
 }
 
-/** Later messages overwrite earlier ones, so the newest verdict per session name wins. */
-function verdictsBySession(messages: Message[]): Map<string, string> {
-  const oldestFirst = [...messages].sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
-  const bySession = new Map<string, string>();
-  for (const message of oldestFirst) {
-    if (message.kind === 'verdict' && message.session) bySession.set(message.session, message.text);
-  }
-  return bySession;
-}
-
-function sessionIndexOf(block: Block, workout: Workout): number {
-  if (!workout.routine_id) return -1;
-  return block.sessions.findIndex((session) => session.hevyRoutineId === workout.routine_id);
-}
-
-function nextIndexAfter(sessionCount: number, mostRecent: number | null): number {
-  if (mostRecent === null || sessionCount === 0) return 0;
-  return (mostRecent + 1) % sessionCount;
-}
-
-export function blockView(block: Block | null, recent: Workout[], messages: Message[]): BlockView {
-  if (!block) return { block: null, nextSessionIndex: null, completions: {} };
-
-  const verdicts = verdictsBySession(messages);
-  const completions: Record<number, Completion> = {};
-  let mostRecent: number | null = null;
-
-  for (const workout of newestFirst(recent)) {
-    const index = sessionIndexOf(block, workout);
-    if (index < 0 || index in completions) continue;
-    const name = block.sessions[index].name;
-    completions[index] = { completedAt: workout.end_time, verdict: verdicts.get(name) ?? null };
-    if (mostRecent === null) mostRecent = index;
-  }
-
-  return { block, nextSessionIndex: nextIndexAfter(block.sessions.length, mostRecent), completions };
-}
-
 /** Most recent Monday at 00:00 in the server's local zone. */
 function startOfWeek(now: Date): number {
   const monday = new Date(now);
@@ -183,95 +121,26 @@ function startOfWeek(now: Date): number {
   return monday.getTime();
 }
 
-export function progressView(summary: HistorySummary, recent: Workout[]): ProgressView {
-  const weekStart = startOfWeek(new Date());
+function sessionIndexOf(block: Block, workout: Workout): number {
+  if (!workout.routine_id) return -1;
+  return block.sessions.findIndex((session) => session.hevyRoutineId === workout.routine_id);
+}
+
+/** The session after the last one they actually ran; the first session when nothing in the window matches. */
+function nextSessionName(block: Block | null, recent: Workout[]): string | null {
+  if (!block || block.sessions.length === 0) return null;
+  const ran = recent.map((workout) => sessionIndexOf(block, workout)).find((index) => index >= 0);
+  const next = ran === undefined ? 0 : (ran + 1) % block.sessions.length;
+  return block.sessions[next].name;
+}
+
+/** `recent` comes newest first, as `recentWorkouts` returns it. */
+export function weekView(block: Block | null, recent: Workout[], now: Date = new Date()): WeekView {
+  const weekStart = startOfWeek(now);
+  const last = recent[0];
   return {
-    workouts: summary.workouts,
-    firstWorkout: summary.firstWorkout,
-    lastWorkout: summary.lastWorkout,
-    thisWeek: recent.filter((workout) => startedAt(workout) >= weekStart).length,
-    lifts: [...summary.exercises].sort((a, b) => b.sessions - a.sessions).slice(0, TOP_LIFTS),
+    workoutsThisWeek: recent.filter((workout) => startedAt(workout) >= weekStart).length,
+    lastWorkout: last ? { title: last.title, at: last.start_time } : null,
+    nextSession: nextSessionName(block, recent),
   };
-}
-
-/** The clock is injected so a test can move past the window without waiting. */
-export function cacheFor<T>(ttlMs: number, load: () => Promise<T>, now: () => number = Date.now): () => Promise<T> {
-  let cached: { value: T; expiresAt: number } | null = null;
-  return async () => {
-    if (cached && now() < cached.expiresAt) return cached.value;
-    const value = await load();
-    cached = { value, expiresAt: now() + ttlMs };
-    return value;
-  };
-}
-
-type Check = (value: unknown) => string | null;
-
-const listed = (options: readonly string[]): string => options.join(', ');
-
-const option =
-  (options: readonly string[]): Check =>
-  (value) =>
-    typeof value === 'string' && options.includes(value) ? null : `must be one of ${listed(options)}`;
-
-const range =
-  ({ min, max }: Range): Check =>
-  (value) =>
-    typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max
-      ? null
-      : `must be a number between ${min} and ${max}`;
-
-function isOptionList(options: readonly string[], value: unknown): value is string[] {
-  return Array.isArray(value) && value.every((item: unknown) => typeof item === 'string' && options.includes(item));
-}
-
-const multiSelect =
-  (options: readonly string[]): Check =>
-  (value) => (isOptionList(options, value) ? null : `must be an array of ${listed(options)}`);
-
-/** The goals rule of `isProfile`, so a profile this accepts is one the next load keeps. */
-const uniqueMultiSelect =
-  (options: readonly string[]): Check =>
-  (value) =>
-    isOptionList(options, value) && value.length > 0 && new Set(value).size === value.length
-      ? null
-      : `must be a non-empty array of ${listed(options)}, each at most once`;
-
-const text =
-  (max: number): Check =>
-  (value) =>
-    typeof value === 'string' && value.length <= max ? null : `must be a string of at most ${max} characters`;
-
-/** Keyed by `keyof Profile`, so a new profile field fails the build until it is validated here. */
-const CHECKS: Record<keyof Profile, Check> = {
-  sex: option(SEXES),
-  age: range(RANGES.age),
-  heightCm: range(RANGES.heightCm),
-  bodyweightKg: range(RANGES.bodyweightKg),
-  goals: uniqueMultiSelect(GOALS),
-  daysPerWeek: range(RANGES.daysPerWeek),
-  sessionMinutes: range(RANGES.sessionMinutes),
-  yearsTraining: option(YEARS_TRAINING),
-  equipment: option(EQUIPMENT),
-  trainingStyle: option(TRAINING_STYLES),
-  cardio: option(CARDIO),
-  injuries: multiSelect(INJURIES),
-  notes: text(NOTES_MAX_CHARACTERS),
-};
-
-export function validateProfile(body: unknown): ProfileResult {
-  if (typeof body !== 'object' || body === null) return { error: 'profile must be an object' };
-  const fields = body as Record<string, unknown>;
-
-  // Fail closed on anything extra: an unrejected key would be cast into Profile and persisted verbatim.
-  const unknown = Object.keys(fields).find((field) => !Object.hasOwn(CHECKS, field));
-  if (unknown) return { error: `${unknown} is not a profile field` };
-
-  for (const [field, check] of Object.entries(CHECKS)) {
-    const problem = check(fields[field]);
-    if (problem) return { error: `${field} ${problem}` };
-  }
-
-  // The body carries exactly the keys of Profile and every one passed its check.
-  return { profile: body as Profile };
 }

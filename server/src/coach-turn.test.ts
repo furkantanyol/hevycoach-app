@@ -1,9 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { createHevyClient } from '@furkantanyol/hevy-client';
 import { describe, expect, it, vi } from 'vitest';
-import { chatTurn, type CoachDeps, verdict } from './coach.js';
-import { contextBlock, MEMORY_MAX_CHARACTERS, SYSTEM_PROMPT, USER_INPUT_CLOSE, USER_INPUT_OPEN } from './prompt.js';
-import { emptyState, type Block, type Message, type Profile, type State } from './state.js';
+import { chatTurn, type CoachDeps } from './coach.js';
+import { emptyState, type Block, type PendingProposal, type Profile, type State } from './state.js';
 
 const OK = 200;
 const NOT_FOUND = 404;
@@ -12,59 +11,46 @@ const TEMPLATE_TITLE = 'Squat (Barbell)';
 const ROUTINE_ID = 'r-1';
 const NEW_ROUTINE_ID = 'r-new-1';
 const FOLDER_ID = 7;
-const WORKOUT_ID = 'w-1';
 const SESSION_NAME = 'Lower A';
 const SECOND_SESSION_NAME = 'Lower B';
-const APPROVED_KG = 110;
+/** Under the guard's no-history cap, so the stub needs no logged workouts behind it. */
+const APPROVED_KG = 90;
 const SETS = 3;
 const REPS = 5;
 const USER_TEXT = 'four days a week';
-const VERDICT_TEXT = 'Squat moved. Same load next week.';
-const MEMORY = 'Squat at 110 kg for 3x5 at RPE 8.';
+const AGREED_TEXT = 'yes, do it';
 const PARTIAL_TEXT = 'Squat day it is.';
 const PLAN_REPLY = 'Your block is in Hevy.';
-const OVERLONG_MEMORY = 'x'.repeat(MEMORY_MAX_CHARACTERS + 1);
-const SHOULDER_REPLY = 'shoulder pinched on incline';
-const VERDICT_TASK_OPENING = 'Judge this finished workout';
+const CLOSING_REPLY = 'Done.';
+const APPLIED_TEXT = `Updated ${SESSION_NAME} in Hevy.`;
+const KEPT_TEXT = 'Kept as is.';
 const HEARTBEAT = '.';
 const SLOW_PLAN_MS = 40_000;
 /** 40 s of plan call spans the 15 s and the 30 s tick of the keep-alive. */
 const DOTS_IN_A_SLOW_PLAN = 2;
 
-const said = (text: string): Message => ({ id: 'm-1', role: 'user', text, createdAt: '2026-09-10T10:00:00.000Z' });
-
 const PROFILE: Profile = {
-  sex: 'male', age: 34, heightCm: 180, bodyweightKg: 82,
   goals: ['strength', 'muscle'],
-  daysPerWeek: 3, sessionMinutes: 60, yearsTraining: '3-5',
-  equipment: 'full_gym', trainingStyle: 'hybrid', cardio: 'none',
-  injuries: [], notes: '',
+  daysPerWeek: 3,
+  bodyweightKg: 82,
+  injuries: [],
+  notes: '',
+  equipment: 'full_gym',
+  sessionMinutes: 60,
+  yearsTraining: '3-5',
 };
+
+const EXERCISES = [{ templateId: TEMPLATE_ID, title: TEMPLATE_TITLE, sets: SETS, reps: REPS, weightKg: APPROVED_KG, rpe: 8, note: 'Brace before you unrack.' }];
 
 const BLOCK: Block = {
   name: 'Autumn block',
   weeks: 4,
   createdAt: '2026-09-01T10:00:00.000Z',
   reason: 'intake answered',
-  sessions: [
-    {
-      name: SESSION_NAME,
-      focus: 'squat and hinge',
-      hevyRoutineId: ROUTINE_ID,
-      exercises: [
-        {
-          templateId: TEMPLATE_ID,
-          title: TEMPLATE_TITLE,
-          sets: SETS,
-          reps: REPS,
-          weightKg: APPROVED_KG,
-          rpe: 8,
-          note: 'Brace before you unrack.',
-        },
-      ],
-    },
-  ],
+  sessions: [{ name: SESSION_NAME, focus: 'squat and hinge', hevyRoutineId: ROUTINE_ID, exercises: EXERCISES }],
 };
+
+const PENDING: PendingProposal = { sessionIndex: 0, exercises: EXERCISES, messageId: 'm-review' };
 
 const PLAN_JSON = JSON.stringify({
   analysis: 'Squat has stalled. Load comes down, volume stays.',
@@ -72,16 +58,14 @@ const PLAN_JSON = JSON.stringify({
     name: BLOCK.name,
     weeks: BLOCK.weeks,
     sessions: [
-      { name: SESSION_NAME, focus: 'squat and hinge', exercises: BLOCK.sessions[0].exercises },
-      { name: SECOND_SESSION_NAME, focus: 'squat and hinge', exercises: BLOCK.sessions[0].exercises },
+      { name: SESSION_NAME, focus: 'squat and hinge', exercises: EXERCISES },
+      { name: SECOND_SESSION_NAME, focus: 'squat and hinge', exercises: EXERCISES },
     ],
   },
 });
 
-const VERDICT_JSON = JSON.stringify({ message: VERDICT_TEXT, memory: MEMORY });
-
-/** One streamed assistant turn: plain text (optionally cut short by an API error), or a single create_program call. */
-type Streamed = { text: string; fail?: true } | { toolInput: object };
+/** One streamed assistant turn: plain text (optionally cut short by an API error), or a single tool call. */
+type Streamed = { text: string; fail?: true } | { tool: string; input: object };
 
 function frames(reply: Streamed): object[] {
   const start = { type: 'message_start', message: { id: 'msg-stream', type: 'message', role: 'assistant', model: 'chat-model', content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 1, output_tokens: 1 } } };
@@ -104,8 +88,8 @@ function frames(reply: Streamed): object[] {
   }
   return [
     start,
-    { type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'toolu_1', name: 'create_program', input: {} } },
-    { type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: JSON.stringify(reply.toolInput) } },
+    { type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'toolu_1', name: reply.tool, input: {} } },
+    { type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: JSON.stringify(reply.input) } },
     { type: 'content_block_stop', index: 0 },
     { type: 'message_delta', delta: { stop_reason: 'tool_use', stop_sequence: null }, usage: { output_tokens: 2 } },
     stop,
@@ -125,11 +109,10 @@ function jsonResponse(text: string): Response {
 }
 
 interface Sent {
-  system: { type: string; text: string; cache_control?: { type: string } }[];
   messages: { role: string; content: unknown }[];
 }
 
-/** A plain reply is the JSON a plan or verdict call returns, optionally after `afterMs` on the clock. */
+/** A plain reply is the JSON a plan call returns, optionally after `afterMs` on the clock. */
 type Plain = string | { text: string; afterMs: number };
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => { setTimeout(resolve, ms); });
@@ -155,31 +138,9 @@ function anthropicStub(streamed: Streamed[], plain: Plain[]) {
 
 const listed = (key: string, items: unknown[]) => ({ page: 1, page_count: 1, [key]: items });
 
-const workout = {
-  id: WORKOUT_ID,
-  title: SESSION_NAME,
-  routine_id: ROUTINE_ID,
-  description: '',
-  start_time: '2026-09-10T10:00:00Z',
-  end_time: '2026-09-10T11:00:00Z',
-  updated_at: '2026-09-10T11:00:00Z',
-  created_at: '2026-09-10T11:00:00Z',
-  exercises: [
-    {
-      index: 0,
-      title: TEMPLATE_TITLE,
-      notes: '',
-      exercise_template_id: TEMPLATE_ID,
-      superset_id: null,
-      sets: [{ index: 0, type: 'normal', weight_kg: APPROVED_KG, reps: REPS, distance_meters: null, duration_seconds: null, rpe: 8, custom_metric: null }],
-    },
-  ],
-};
-
 function hevyStub() {
   const routes: [string, (method: string) => unknown][] = [
-    [`/v1/workouts/${WORKOUT_ID}`, () => workout],
-    ['/v1/workouts', () => listed('workouts', [workout])],
+    ['/v1/workouts', () => listed('workouts', [])],
     ['/v1/body_measurements', () => listed('body_measurements', [])],
     [
       '/v1/exercise_templates',
@@ -216,7 +177,9 @@ function harness(streamed: Streamed[] = [], plain: Plain[] = [], seed: Partial<S
   return { deps, state, saved, sent: anthropic.sent };
 }
 
-const planTurn = (): Streamed[] => [{ toolInput: { profile: PROFILE, reason: 'intake answered' } }, { text: PLAN_REPLY }];
+const planTurn = (): Streamed[] => [{ tool: 'create_program', input: { profile: PROFILE, reason: 'intake answered' } }, { text: PLAN_REPLY }];
+
+const pending = (): Partial<State> => ({ block: structuredClone(BLOCK), pendingProposal: PENDING });
 
 describe('chatTurn', () => {
   it('should save the user message before the turn can fail', async () => {
@@ -289,54 +252,39 @@ describe('chatTurn', () => {
 
     expect(Object.keys(state.messages[1])).toEqual(['id', 'role', 'text', 'createdAt']);
   });
-});
 
-describe('verdict', () => {
-  it('should name the matched session on the verdict message', async () => {
-    const { deps, state } = harness([], [VERDICT_JSON], { block: BLOCK });
+  it('should apply the pending proposal when the model calls apply_proposal', async () => {
+    const { deps, state } = harness([{ tool: 'apply_proposal', input: {} }, { text: CLOSING_REPLY }], [], pending());
 
-    await verdict(deps, WORKOUT_ID);
+    await chatTurn(deps, AGREED_TEXT, () => {});
 
-    expect(state.messages[0]).toMatchObject({ kind: 'verdict', session: SESSION_NAME });
+    expect(state.messages.map((message) => message.text)).toEqual([AGREED_TEXT, APPLIED_TEXT, CLOSING_REPLY]);
   });
 
-  it('should leave the session off when the workout matches no session', async () => {
-    const { deps, state } = harness([], [VERDICT_JSON]);
+  it('should answer the apply_proposal call with the confirmation the athlete reads', async () => {
+    const { deps, sent } = harness([{ tool: 'apply_proposal', input: {} }, { text: CLOSING_REPLY }], [], pending());
 
-    await verdict(deps, WORKOUT_ID);
+    await chatTurn(deps, AGREED_TEXT, () => {});
 
-    expect(state.messages[0].session).toBeUndefined();
+    expect(sent[1].messages.at(-1)).toEqual({
+      role: 'user',
+      content: [{ type: 'tool_result', tool_use_id: 'toolu_1', content: APPLIED_TEXT }],
+    });
   });
 
-  it('should send the cached system prompt and the coach context', async () => {
-    const { deps, sent } = harness([], [VERDICT_JSON], { block: BLOCK });
-    const context = contextBlock(deps.state);
+  it('should leave the plan fields off a turn that only applied a proposal', async () => {
+    const { deps, state } = harness([{ tool: 'apply_proposal', input: {} }, { text: CLOSING_REPLY }], [], pending());
 
-    await verdict(deps, WORKOUT_ID);
+    await chatTurn(deps, AGREED_TEXT, () => {});
 
-    expect(sent[0].system).toEqual([
-      { type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } },
-      { type: 'text', text: context },
-    ]);
+    expect(Object.keys(state.messages[2])).toEqual(['id', 'role', 'text', 'createdAt']);
   });
 
-  it('should follow the recent thread with the verdict task as the last user message', async () => {
-    const { deps, sent } = harness([], [VERDICT_JSON], { block: BLOCK, messages: [said(SHOULDER_REPLY)] });
+  it('should drop the pending proposal when the model calls discard_proposal', async () => {
+    const { deps, state } = harness([{ tool: 'discard_proposal', input: {} }, { text: CLOSING_REPLY }], [], pending());
 
-    await verdict(deps, WORKOUT_ID);
+    await chatTurn(deps, 'no, leave it', () => {});
 
-    expect(sent[0].messages).toEqual([
-      { role: 'user', content: `${USER_INPUT_OPEN}\n${SHOULDER_REPLY}\n${USER_INPUT_CLOSE}` },
-      { role: 'user', content: expect.stringContaining(VERDICT_TASK_OPENING) },
-    ]);
-  });
-
-  it('should truncate a memory that came back longer than the documented bound', async () => {
-    const overlong = JSON.stringify({ message: VERDICT_TEXT, memory: OVERLONG_MEMORY });
-    const { deps, state } = harness([], [overlong]);
-
-    await verdict(deps, WORKOUT_ID);
-
-    expect(state.memory).toHaveLength(MEMORY_MAX_CHARACTERS);
+    expect([state.pendingProposal, state.messages[1].text]).toEqual([null, KEPT_TEXT]);
   });
 });

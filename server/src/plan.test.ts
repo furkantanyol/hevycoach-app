@@ -1,7 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { createHevyClient } from '@furkantanyol/hevy-client';
 import { describe, expect, it } from 'vitest';
-import { type CoachDeps, createProgram } from './coach.js';
+import type { CoachDeps } from './coach.js';
+import { createProgram } from './plan.js';
 import { contextBlock, SYSTEM_PROMPT, USER_INPUT_CLOSE, USER_INPUT_OPEN } from './prompt.js';
 import { emptyState, type Message, type Profile } from './state.js';
 
@@ -27,11 +28,14 @@ const SESSION_A = 'Lower A';
 const SESSION_B = 'Lower B';
 
 const PROFILE: Profile = {
-  sex: 'male', age: 34, heightCm: 180, bodyweightKg: 82,
   goals: ['strength', 'muscle'],
-  daysPerWeek: 3, sessionMinutes: 60, yearsTraining: '3-5',
-  equipment: 'full_gym', trainingStyle: 'hybrid', cardio: 'none',
-  injuries: [], notes: '',
+  daysPerWeek: 3,
+  bodyweightKg: 82,
+  injuries: [],
+  notes: '',
+  equipment: 'full_gym',
+  sessionMinutes: 60,
+  yearsTraining: '3-5',
 };
 
 const said = (role: Message['role'], text: string): Message => ({
@@ -109,60 +113,19 @@ interface Call {
 
 const listed = (key: string, items: unknown[]) => ({ page: 1, page_count: 1, [key]: items });
 
-const workoutSet = {
-  index: 0,
-  type: 'normal',
-  weight_kg: BEST_KG,
-  reps: REPS,
-  distance_meters: null,
-  duration_seconds: null,
-  rpe: null,
-  custom_metric: null,
-};
+const workoutSet = { index: 0, type: 'normal', weight_kg: BEST_KG, reps: REPS, distance_meters: null, duration_seconds: null, rpe: null, custom_metric: null };
+const squatted = { index: 0, title: TEMPLATE_TITLE, notes: '', exercise_template_id: TEMPLATE_ID, superset_id: null, sets: [workoutSet] };
+const logged = { id: 'w-1', title: SESSION_A, routine_id: null, description: '', start_time: '2026-09-01T10:00:00Z', end_time: '2026-09-01T11:00:00Z', updated_at: '2026-09-01T11:00:00Z', created_at: '2026-09-01T11:00:00Z', exercises: [squatted] };
+const template = { id: TEMPLATE_ID, title: TEMPLATE_TITLE, type: 'weight_reps', primary_muscle_group: 'quadriceps', secondary_muscle_groups: [], equipment: 'barbell', is_custom: false };
 
 function hevyStub() {
   const calls: Call[] = [];
   const routes: Record<string, (call: Call) => unknown> = {
-    '/v1/workouts': () =>
-      listed('workouts', [
-        {
-          id: 'w-1',
-          title: SESSION_A,
-          routine_id: null,
-          description: '',
-          start_time: '2026-09-01T10:00:00Z',
-          end_time: '2026-09-01T11:00:00Z',
-          updated_at: '2026-09-01T11:00:00Z',
-          created_at: '2026-09-01T11:00:00Z',
-          exercises: [
-            {
-              index: 0,
-              title: TEMPLATE_TITLE,
-              notes: '',
-              exercise_template_id: TEMPLATE_ID,
-              superset_id: null,
-              sets: [workoutSet],
-            },
-          ],
-        },
-      ]),
+    '/v1/workouts': () => listed('workouts', [logged]),
     '/v1/body_measurements': () => listed('body_measurements', []),
-    '/v1/exercise_templates': () =>
-      listed('exercise_templates', [
-        {
-          id: TEMPLATE_ID,
-          title: TEMPLATE_TITLE,
-          type: 'weight_reps',
-          primary_muscle_group: 'quadriceps',
-          secondary_muscle_groups: [],
-          equipment: 'barbell',
-          is_custom: false,
-        },
-      ]),
+    '/v1/exercise_templates': () => listed('exercise_templates', [template]),
     '/v1/routine_folders': (call) =>
-      call.method === 'POST'
-        ? { id: FOLDER_ID, index: 0, title: 'HevyCoach', updated_at: '', created_at: '' }
-        : listed('routine_folders', []),
+      call.method === 'POST' ? { id: FOLDER_ID, index: 0, title: 'HevyCoach', updated_at: '', created_at: '' } : listed('routine_folders', []),
     '/v1/routines': () => ({ routine: { id: NEW_ROUTINE_ID } }),
   };
 

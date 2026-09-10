@@ -1,8 +1,8 @@
 import type { Workout } from '@furkantanyol/hevy-client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { blockView, prefillFrom, progressView } from './derived.js';
+import { prefillFrom, weekView } from './derived.js';
 import type { ExerciseHistory, HistorySummary } from './hevy.js';
-import type { Block, Message, Session } from './state.js';
+import type { Block, Session } from './state.js';
 
 /** Thursday 10 September 2026, local. The most recent Monday 00:00 is then the 7th. */
 const NOW = new Date(2026, 8, 10, 12, 0, 0);
@@ -11,7 +11,6 @@ const MS_PER_MINUTE = 60_000;
 const MS_PER_DAY = 86_400_000;
 const MS_PER_YEAR = 31_557_600_000;
 const EIGHT_WEEKS_DAYS = 56;
-const TOP_LIFTS = 15;
 
 const iso = (epochMs: number): string => new Date(epochMs).toISOString();
 const daysAgo = (days: number): string => iso(NOW.getTime() - days * MS_PER_DAY);
@@ -57,7 +56,6 @@ const summaryOf = (extra: Partial<HistorySummary> = {}): HistorySummary => ({
 
 const session = (name: string, hevyRoutineId: string | null): Session => ({ name, focus: 'lower', hevyRoutineId, exercises: [] });
 const blockOf = (...sessions: Session[]): Block => ({ name: 'Block A', weeks: 4, sessions, createdAt: daysAgo(30), reason: 'intake' });
-const verdictFor = (name: string, text: string, createdAt: string): Message => ({ id: `m-${text}`, role: 'assistant', text, createdAt, kind: 'verdict', session: name });
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] });
@@ -165,105 +163,52 @@ describe('prefillFrom', () => {
   });
 });
 
-describe('blockView', () => {
+describe('weekView', () => {
   const push = session('1 Push', 'r-push');
   const pull = session('2 Pull', 'r-pull');
   const legs = session('3 Legs', 'r-legs');
 
-  it('should report no block when none has been written', () => {
-    expect(blockView(null, [ran('r-push', daysAgo(1))], [])).toEqual({
-      block: null,
-      nextSessionIndex: null,
-      completions: {},
-    });
-  });
-
-  it('should key a completion by the index of the session the routine id matches', () => {
-    const view = blockView(blockOf(push, pull, legs), [ran('r-pull', daysAgo(2))], []);
-
-    expect(view.completions).toEqual({ 1: { completedAt: daysAgo(2), verdict: null } });
-  });
-
-  it('should attach the verdict written for that session name', () => {
-    const messages = [verdictFor('2 Pull', 'Strong rows.', daysAgo(2))];
-
-    const view = blockView(blockOf(push, pull), [ran('r-pull', daysAgo(2))], messages);
-
-    expect(view.completions[1].verdict).toBe('Strong rows.');
-  });
-
-  it('should keep the newest verdict when a session has several', () => {
-    const messages = [
-      verdictFor('1 Push', 'Old take.', daysAgo(9)),
-      verdictFor('1 Push', 'Fresh take.', daysAgo(1)),
-    ];
-
-    const view = blockView(blockOf(push), [ran('r-push', daysAgo(1))], messages);
-
-    expect(view.completions[0].verdict).toBe('Fresh take.');
-  });
-
-  it('should keep the newest workout when a session was run twice', () => {
-    const workouts = [ran('r-push', daysAgo(8)), ran('r-push', daysAgo(1))];
-
-    const view = blockView(blockOf(push), workouts, []);
-
-    expect(view.completions[0].completedAt).toBe(daysAgo(1));
-  });
-
-  it('should point at the session following the most recently completed one', () => {
-    const workouts = [ran('r-push', daysAgo(4)), ran('r-pull', daysAgo(1))];
-
-    const view = blockView(blockOf(push, pull, legs), workouts, []);
-
-    expect(view.nextSessionIndex).toBe(2);
-  });
-
-  it('should wrap to the first session after the last one in the block', () => {
-    const view = blockView(blockOf(push, pull, legs), [ran('r-legs', daysAgo(1))], []);
-
-    expect(view.nextSessionIndex).toBe(0);
-  });
-
-  it('should point at the first session when nothing has been completed', () => {
-    const view = blockView(blockOf(push, pull), [], []);
-
-    expect(view.nextSessionIndex).toBe(0);
-  });
-
-  it('should not match a free workout against a session that has no routine yet', () => {
-    const view = blockView(blockOf(session('1 Push', null)), [workout(daysAgo(1))], []);
-
-    expect(view.completions).toEqual({});
-  });
-});
-
-describe('progressView', () => {
-  it('should pass the workout counts and span through from the summary', () => {
-    const summary = summaryOf({ workouts: 214, firstWorkout: yearsAgo(4), lastWorkout: daysAgo(1) });
-
-    const view = progressView(summary, []);
-
-    expect(view).toMatchObject({ workouts: 214, firstWorkout: yearsAgo(4), lastWorkout: daysAgo(1) });
-  });
-
   it('should count a workout starting exactly at midnight on the most recent Monday', () => {
-    const view = progressView(summaryOf(), [workout(iso(MONDAY.getTime()))]);
+    const view = weekView(null, [workout(iso(MONDAY.getTime()))], NOW);
 
-    expect(view.thisWeek).toBe(1);
+    expect(view.workoutsThisWeek).toBe(1);
   });
 
   it('should exclude a workout from the minute before that Monday', () => {
-    const view = progressView(summaryOf(), [workout(iso(MONDAY.getTime() - MS_PER_MINUTE))]);
+    const view = weekView(null, [workout(iso(MONDAY.getTime() - MS_PER_MINUTE))], NOW);
 
-    expect(view.thisWeek).toBe(0);
+    expect(view.workoutsThisWeek).toBe(0);
   });
 
-  it('should return the fifteen most trained lifts', () => {
-    const exercises = Array.from({ length: 20 }, (_, index) => lift(`Lift ${index}`, index));
+  it('should report the newest workout of the window as the last one', () => {
+    const view = weekView(null, [workout(daysAgo(1)), workout(daysAgo(4))], NOW);
 
-    const view = progressView(summaryOf({ exercises }), []);
+    expect(view.lastWorkout).toEqual({ title: 'Lower A', at: daysAgo(1) });
+  });
 
-    expect([view.lifts.length, view.lifts[0].sessions]).toEqual([TOP_LIFTS, 19]);
+  it('should report no last workout when the window is empty', () => {
+    expect(weekView(null, [], NOW).lastWorkout).toBeNull();
+  });
+
+  it('should report no next session when no block has been written', () => {
+    expect(weekView(null, [ran('r-push', daysAgo(1))], NOW).nextSession).toBeNull();
+  });
+
+  it('should name the session after the last one they ran', () => {
+    const view = weekView(blockOf(push, pull, legs), [ran('r-pull', daysAgo(1))], NOW);
+
+    expect(view.nextSession).toBe('3 Legs');
+  });
+
+  it('should wrap to the first session after the last one in the block', () => {
+    const view = weekView(blockOf(push, pull, legs), [ran('r-legs', daysAgo(1))], NOW);
+
+    expect(view.nextSession).toBe('1 Push');
+  });
+
+  it('should name the first session when nothing in the window matches a routine', () => {
+    const view = weekView(blockOf(push, pull), [workout(daysAgo(1))], NOW);
+
+    expect(view.nextSession).toBe('1 Push');
   });
 });

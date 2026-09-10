@@ -2,9 +2,9 @@ import Anthropic from '@anthropic-ai/sdk';
 import { createHevyClient } from '@furkantanyol/hevy-client';
 import type { FastifyBaseLogger, FastifyInstance } from 'fastify';
 import { describe, expect, it } from 'vitest';
-import type { CoachDeps } from './coach.js';
+import type { CoachDeps, Review } from './coach.js';
 import { buildApp, type RouteDeps, SEEN_EVENTS_MAX } from './routes.js';
-import { emptyState, type State } from './state.js';
+import { emptyState, type Message, type State } from './state.js';
 
 process.env.LOG_LEVEL = 'silent';
 
@@ -17,6 +17,10 @@ const NOT_CONFIGURED = 503;
 const WEBHOOK = '/webhook/hevy';
 const FIRST_DELIVERY = 'first hevy delivery';
 const REDACTED = '[redacted]';
+const PUSH_TOKEN = 'ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]';
+const PUSH_TITLE = 'Review of your workout is ready';
+const REVIEW_HEADLINE = 'Squat moved for all three sets.';
+const SESSION_NAME = 'Lower A';
 
 type Headers = Record<string, string>;
 
@@ -53,10 +57,44 @@ function harness(overrides: Partial<RouteDeps> = {}, seed: Partial<State> = {}) 
     appToken: APP_TOKEN,
     webhookSecret: WEBHOOK_SECRET,
     pushToken: () => state.pushToken,
-    judge: async () => null,
+    handlers: { review: async () => null },
     ...overrides,
   };
   return { app: buildApp(deps), state, saves: () => saves };
+}
+
+interface PushCall {
+  token: string;
+  title: string;
+  body: string;
+  data: Record<string, string>;
+}
+
+const REVIEWED: Review = {
+  message: { id: 'm-1', role: 'assistant', text: `${REVIEW_HEADLINE}\nSame load next week.`, createdAt: '2026-09-10T10:00:00.000Z', kind: 'review' } satisfies Message,
+  pushBody: REVIEW_HEADLINE,
+  sessionName: SESSION_NAME,
+};
+
+/** A delivery that reaches the push: the review is written, a device is registered, and the push is captured. */
+function pushHarness() {
+  const pushes: PushCall[] = [];
+  let landed: () => void = () => {};
+  const pushed = new Promise<void>((resolve) => {
+    landed = resolve;
+  });
+  const { app } = harness({
+    pushToken: () => PUSH_TOKEN,
+    handlers: {
+      review: async () => REVIEWED,
+      push: async (token, title, body, data) => {
+        pushes.push({ token, title, body, data });
+        landed();
+        return { sent: true };
+      },
+    },
+  });
+  return { app, pushes, pushed };
 }
 
 function captureLogger(records: unknown[][]): FastifyBaseLogger {
@@ -150,6 +188,24 @@ describe('POST /webhook/hevy', () => {
     await post(app, WEBHOOK, delivery('e-1'), hookAuth);
 
     expect(firstDeliveryLog(records)?.headers.authorization).toBe(REDACTED);
+  });
+
+  it('should push the review under the title the app shows', async () => {
+    const { app, pushes, pushed } = pushHarness();
+
+    await post(app, WEBHOOK, delivery('e-1'), hookAuth);
+    await pushed;
+
+    expect(pushes[0]?.title).toBe(PUSH_TITLE);
+  });
+
+  it('should send the first line of the review as the push body', async () => {
+    const { app, pushes, pushed } = pushHarness();
+
+    await post(app, WEBHOOK, delivery('e-1'), hookAuth);
+    await pushed;
+
+    expect(pushes[0]).toMatchObject({ token: PUSH_TOKEN, body: REVIEW_HEADLINE, data: { url: '/' } });
   });
 
   it('should drop the oldest event id once seenEvents is full', async () => {
