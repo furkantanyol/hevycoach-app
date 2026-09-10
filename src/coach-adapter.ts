@@ -5,8 +5,8 @@ import {
   type ThreadMessageLike,
   type ThreadHistoryAdapter,
 } from '@assistant-ui/react-native';
-// React Native's global fetch cannot stream a response body; expo/fetch can.
-import { fetch } from 'expo/fetch';
+
+import { serverErrorMessage, serverFetch } from './lib/server';
 
 const ERROR_PREFIX = 'Coach unavailable: ';
 
@@ -43,32 +43,8 @@ export type CoachMessage = {
   readonly session?: string;
 };
 
-type CoachRequest = {
-  readonly method?: string;
-  readonly headers?: Readonly<Record<string, string>>;
-  readonly body?: string;
-  readonly signal?: AbortSignal;
-};
-
-const baseUrl = process.env.EXPO_PUBLIC_COACH_URL;
-const appToken = process.env.EXPO_PUBLIC_APP_TOKEN;
-
-if (!baseUrl) {
-  throw new Error('EXPO_PUBLIC_COACH_URL is missing. Set it in the app .env before starting Metro.');
-}
-if (!appToken) {
-  throw new Error('EXPO_PUBLIC_APP_TOKEN is missing. Set it in the app .env before starting Metro.');
-}
-
-/** Every call to the coach server: base URL + bearer token. */
-export function coachFetch(path: string, init: CoachRequest = {}) {
-  return fetch(`${baseUrl}${path}`, {
-    method: init.method,
-    body: init.body,
-    signal: init.signal,
-    headers: { ...init.headers, Authorization: `Bearer ${appToken}` },
-  });
-}
+/** Every call to the coach server: base URL + bearer token. Lives in lib/server. */
+export { serverFetch as coachFetch } from './lib/server';
 
 function lastUserText(messages: readonly ThreadMessage[]): string {
   const message = messages.findLast((candidate) => candidate.role === 'user');
@@ -79,24 +55,9 @@ function lastUserText(messages: readonly ThreadMessage[]): string {
     .join('\n');
 }
 
-/** The server answers errors as JSON `{ error }`; fall back to the status line. */
-async function errorLine(response: { status: number; text: () => Promise<string> }) {
-  try {
-    const body = await response.text();
-    const parsed: unknown = JSON.parse(body);
-    if (parsed && typeof parsed === 'object' && 'error' in parsed) {
-      const { error } = parsed as { error: unknown };
-      if (typeof error === 'string') return error;
-    }
-    return body || `HTTP ${response.status}`;
-  } catch {
-    return `HTTP ${response.status}`;
-  }
-}
-
 export const coachChatAdapter: ChatModelAdapter = {
   async *run({ messages, abortSignal }) {
-    const response = await coachFetch('/messages', {
+    const response = await serverFetch('/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text: lastUserText(messages) }),
@@ -104,7 +65,7 @@ export const coachChatAdapter: ChatModelAdapter = {
     });
 
     if (!response.ok) {
-      yield { content: [{ type: 'text', text: ERROR_PREFIX + (await errorLine(response)) }] };
+      yield { content: [{ type: 'text', text: ERROR_PREFIX + (await serverErrorMessage(response)) }] };
       return;
     }
 
@@ -149,7 +110,7 @@ function toMessageLike(message: CoachMessage): ThreadMessageLike {
 
 export const coachHistoryAdapter: ThreadHistoryAdapter = {
   async load() {
-    const response = await coachFetch('/messages');
+    const response = await serverFetch('/messages');
     if (!response.ok) return { messages: [] };
     const payload: unknown = await response.json();
     if (!Array.isArray(payload)) return { messages: [] };
