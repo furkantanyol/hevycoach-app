@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@assistant-ui/react-native": "^0.1.40",
+    "assistant-cloud": "^0.1.43",
     "expo": "~57.0.21",
     "expo-constants": "~57.0.17",
     "expo-dev-client": "~57.0.18",
