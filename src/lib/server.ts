@@ -1,8 +1,8 @@
 /**
  * The one way the app talks to the coach server: base URL plus the bearer
- * token, and a hook that keeps a screen's copy of a GET fresh. The app stores
- * nothing, so every screen reads the server on mount, when its tab is focused,
- * and when the app comes back to the foreground.
+ * token, and a hook that keeps the screen's copy of a GET fresh. The app
+ * stores nothing, so it reads the server on mount and again whenever the app
+ * comes back to the foreground.
  */
 import { useFocusEffect } from 'expo-router';
 // React Native's global fetch cannot stream a response body; expo/fetch can,
@@ -39,9 +39,6 @@ if (!baseUrl) {
 if (!appToken) {
   throw new Error('EXPO_PUBLIC_APP_TOKEN is missing. Set it in the app .env before starting Metro.');
 }
-
-/** Just the host, for the line at the foot of the Profile tab. */
-export const serverHost = baseUrl.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
 
 /** Every call to the coach server: base URL + bearer token. */
 export function serverFetch(path: string, init: ServerRequest = {}) {
@@ -82,7 +79,7 @@ export function describeError(error: unknown): string {
 
 /**
  * A GET the screen owns. `useFocusEffect` covers both the first render and
- * every later return to the tab, so there is no separate mount effect to
+ * every later return to the screen, so there is no separate mount effect to
  * double the request. Only call this from inside a navigator screen.
  */
 export function useServer<T>(path: string): ServerState<T> {

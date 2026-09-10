@@ -1,68 +1,115 @@
 /**
- * The gate. `/` is where the app opens and where a verdict push points, so this
- * route reads GET /profile once and hands the launch to intake or to the tabs.
- * It holds a blank screen in the app's own ground while the answer is in
- * flight, so the app never flashes a tab bar at someone who has not been
- * through onboarding.
+ * The one screen: Hevy's large title, the week line under it, the thread. No
+ * gate and no redirect — the server posts the opener, so the first launch and
+ * the thousandth open the same way.
  */
-import { Redirect, type Href } from 'expo-router';
-import { useEffect, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { AssistantRuntimeProvider, useLocalRuntime } from '@assistant-ui/react-native';
+import { StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { useTheme } from '../components/assistant-ui/theme';
-import { serverJson } from '../lib/server';
-import type { ProfileResponse } from '../lib/types';
+import { coachChatAdapter, coachHistoryAdapter } from '../coach-adapter';
+import { Thread } from '../components/assistant-ui/thread.aui';
+import { Spacing, useTheme } from '../components/assistant-ui/theme';
+import { useReloadCount } from '../lib/reload';
+import { useServer } from '../lib/server';
+import type { WeekView } from '../lib/types';
 
-const COACH_TAB: Href = '/(tabs)/coach';
-const ONBOARDING: Href = '/onboarding';
+const SCREEN_TITLE = 'Coach';
+/** The strip holds this height whether or not GET /week has answered. */
+const STRIP_LINE_HEIGHT = 18;
+/** Shown when the request failed; a request still in flight stays blank. */
+const STRIP_ERROR = 'Week unavailable';
 
-/**
- * A server that cannot be reached sends the user to the tabs rather than into
- * intake: the tabs show the error, and a profile that already exists is not
- * worth asking for twice.
- */
-async function resolveDestination(): Promise<Href> {
-  try {
-    const { profile } = await serverJson<ProfileResponse>('/profile');
-    return profile ? COACH_TAB : ONBOARDING;
-  } catch {
-    return COACH_TAB;
-  }
+function workoutCount(workouts: number): string {
+  if (workouts === 0) return 'No workouts yet this week';
+  return workouts === 1 ? 'This week 1 workout' : `This week ${workouts} workouts`;
 }
 
-/** One read of GET /profile on launch. `null` until it answers. */
-function useDestination(): Href | null {
-  const [destination, setDestination] = useState<Href | null>(null);
+function weekLine(week: WeekView): string {
+  const count = workoutCount(week.workoutsThisWeek);
+  return week.nextSession === null ? count : `${count} · next ${week.nextSession}`;
+}
 
-  useEffect(() => {
-    let cancelled = false;
+/** Stale numbers beat an error message, so `data` wins whenever it is there. */
+function stripLine(data: WeekView | null, error: string | null): string | null {
+  if (data !== null) return weekLine(data);
+  return error === null ? null : STRIP_ERROR;
+}
 
-    const decide = async () => {
-      const next = await resolveDestination();
-      if (!cancelled) setDestination(next);
-    };
+/** Grey, one line, never taller or shorter than STRIP_LINE_HEIGHT. */
+function WeekStrip() {
+  const { colors } = useTheme();
+  const { data, error } = useServer<WeekView>('/week');
+  const line = stripLine(data, error);
 
-    void decide();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  return (
+    <View style={styles.strip}>
+      {line === null ? null : (
+        <Text style={[styles.stripText, { color: colors.mutedForeground }]} numberOfLines={1}>
+          {line}
+        </Text>
+      )}
+    </View>
+  );
+}
 
-  return destination;
+/**
+ * Keyed on the reload counter: a fresh key is a fresh runtime, which is the
+ * only way history is read again (`useLocalRuntime` loads it once and reports
+ * `refetchThread: false`). A remount aborts a streaming reply and drops an
+ * unsent draft, so only a notification tap asks for one (src/lib/reload.ts) —
+ * never a return to the foreground, which happens on every Control Centre
+ * swipe, permission prompt and incoming call.
+ */
+function CoachThread() {
+  const runtime = useLocalRuntime(coachChatAdapter, {
+    adapters: { history: coachHistoryAdapter },
+  });
+
+  return (
+    <AssistantRuntimeProvider runtime={runtime}>
+      <Thread />
+    </AssistantRuntimeProvider>
+  );
 }
 
 export default function Index() {
   const { colors } = useTheme();
-  const destination = useDestination();
+  const threadKey = useReloadCount();
 
-  if (destination === null) {
-    return <View style={[styles.ground, { backgroundColor: colors.background }]} />;
-  }
-  return <Redirect href={destination} />;
+  return (
+    <SafeAreaView style={[styles.screen, { backgroundColor: colors.background }]} edges={['top']}>
+      <Text
+        accessibilityRole="header"
+        style={[styles.title, { color: colors.foreground }]}
+        numberOfLines={1}
+      >
+        {SCREEN_TITLE}
+      </Text>
+      <WeekStrip />
+      <CoachThread key={threadKey} />
+    </SafeAreaView>
+  );
 }
 
 const styles = StyleSheet.create({
-  ground: {
+  screen: {
     flex: 1,
+  },
+  title: {
+    fontSize: 34,
+    fontWeight: '700',
+    letterSpacing: -0.4,
+    paddingHorizontal: Spacing.gutter,
+    paddingTop: 8,
+  },
+  strip: {
+    height: STRIP_LINE_HEIGHT,
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.gutter,
+  },
+  stripText: {
+    fontSize: 13,
+    lineHeight: STRIP_LINE_HEIGHT,
   },
 });

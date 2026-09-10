@@ -7,7 +7,8 @@ import {
 import { useEffect, useState } from 'react';
 import { Animated, StyleSheet, Text, View } from 'react-native';
 
-import { PlanCards, VerdictCaption } from './coach-metadata';
+import { ChoicePills } from './choices';
+import { ReviewCaption } from './coach-metadata';
 import { Radius, useTheme } from './theme';
 
 const DOT_FADE_MS = 400;
@@ -78,12 +79,12 @@ function UserMessage() {
   );
 }
 
-/** Left, in the light-grey pill. Plan cards sit under the bubble, not in it. */
+/** Left, in the light-grey pill. Choice pills sit under the bubble, not in it. */
 function AssistantMessage() {
   const { colors } = useTheme();
   return (
     <MessagePrimitive.Root style={styles.assistantContainer}>
-      <VerdictCaption />
+      <ReviewCaption />
       <View style={[styles.bubble, { backgroundColor: colors.muted }]}>
         <MessagePrimitive.Parts components={{ Text: AssistantText, Empty: TypingIndicator }} />
         <ErrorPrimitive.Root
@@ -95,7 +96,7 @@ function AssistantMessage() {
           <ErrorPrimitive.Message style={[styles.errorText, { color: colors.destructive }]} />
         </ErrorPrimitive.Root>
       </View>
-      <PlanCards />
+      <ChoicePills />
     </MessagePrimitive.Root>
   );
 }
