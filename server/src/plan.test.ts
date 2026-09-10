@@ -26,6 +26,10 @@ const EMPTY_ANALYSIS = 'Before I write this I need to know which days of the wee
 const EMPTY_BLOCK_LOG = `plan attempt returned an empty block (sessions: 0, exercises: 0): ${EMPTY_ANALYSIS}`;
 const SESSION_A = 'Lower A';
 const SESSION_B = 'Lower B';
+const BLOCK_NAME = 'Autumn block';
+const SESSION_COUNT = 2;
+const ROUTINE_NAMES = `Open Hevy → Routines → HevyCoach: ${SESSION_A}, ${SESSION_B}`;
+const CONFIRMATION = `Block written to Hevy: ${BLOCK_NAME}, ${SESSION_COUNT} sessions — ${SESSION_A}, ${SESSION_B}. The analysis has already been shown to the athlete; add at most two short lines: what to do first and one question. Do not repeat the analysis.`;
 /** What the guard writes into the analysis once it stops asking the model and bounds the load itself. */
 const ADJUSTMENT = `${TEMPLATE_TITLE} in ${SESSION_A}: weight capped at ${CAP_KG} kg (planned ${OVER_CAP_KG} kg)`;
 
@@ -62,7 +66,7 @@ function planJson(weightKg: number): string {
   return JSON.stringify({
     analysis: ANALYSIS,
     block: {
-      name: 'Autumn block',
+      name: BLOCK_NAME,
       weeks: 4,
       sessions: [
         { name: SESSION_A, focus: 'squat and hinge', exercises: [squat(weightKg)] },
@@ -242,12 +246,20 @@ describe('createProgram', () => {
     expect([state.profile, state.block?.sessions[0].hevyRoutineId]).toEqual([PROFILE, NEW_ROUTINE_ID]);
   });
 
-  it('should return the analysis followed by a one-line block summary', async () => {
+  it('should close the analysis with the line naming the routines', async () => {
     const { deps } = harness([planJson(APPROVED_KG)]);
 
     const result = await createProgram(deps, { profile: PROFILE, reason: 'intake answered' });
 
-    expect(result).toBe(`${ANALYSIS}\n\nWritten to Hevy: Autumn block, 2 sessions — ${SESSION_A}, ${SESSION_B}.`);
+    expect(result.analysis).toBe(`${ANALYSIS}\n\n${ROUTINE_NAMES}`);
+  });
+
+  it('should confirm the written block to the model without repeating the analysis', async () => {
+    const { deps } = harness([planJson(APPROVED_KG)]);
+
+    const result = await createProgram(deps, { profile: PROFILE, reason: 'intake answered' });
+
+    expect(result.confirmation).toBe(CONFIRMATION);
   });
 
   it('should clamp the load and write the block when the retry still breaks the guard', async () => {
@@ -263,9 +275,7 @@ describe('createProgram', () => {
 
     const result = await createProgram(deps, { profile: PROFILE, reason: 'intake' });
 
-    expect(result).toBe(
-      `${ANALYSIS}\n\n**Guard adjustments**\n- ${ADJUSTMENT}\n\nWritten to Hevy: Autumn block, 2 sessions — ${SESSION_A}, ${SESSION_B}.`,
-    );
+    expect(result.analysis).toBe(`${ANALYSIS}\n\n**Guard adjustments**\n- ${ADJUSTMENT}\n\n${ROUTINE_NAMES}`);
   });
 
   it('should throw when the second block breaks a rule no fix can bound', async () => {

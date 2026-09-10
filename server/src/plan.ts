@@ -8,6 +8,10 @@ import { isProfile, type Block, type Exercise, type Profile } from './state.js';
 const GUARD_RETRY = 'The guard rejected that block. Fix every violation below and return the whole block again.';
 const GUARD_FAILED = 'The plan broke the guard twice and was not written:';
 const GUARD_ADJUSTED = '**Guard adjustments**';
+const OPEN_IN_HEVY = 'Open Hevy → Routines → HevyCoach: ';
+/** The tool result is the model's brief, not the athlete's plan: they have already read the analysis by the time it lands. */
+const CONTINUE_BRIEFLY =
+  'The analysis has already been shown to the athlete; add at most two short lines: what to do first and one question. Do not repeat the analysis.';
 const EMPTY_BLOCK = 'plan attempt returned an empty block';
 /** Enough of the analysis to see what the model was trying to say instead of planning. */
 const ANALYSIS_LOG_MAX = 300;
@@ -107,10 +111,16 @@ async function approvedPlan(run: PlanRun, task: string): Promise<Attempt> {
   return clamped(run, second);
 }
 
-function blockSummary(block: Block): string {
-  const names = block.sessions.map((session) => session.name).join(', ');
+const sessionNames = (block: Block): string => block.sessions.map((session) => session.name).join(', ');
+
+/** The line every plan message closes on, in chat and on the intake path alike: where to find what was just written. */
+export function routineNamesLine(block: Block): string {
+  return `${OPEN_IN_HEVY}${sessionNames(block)}`;
+}
+
+function blockConfirmation(block: Block): string {
   const count = block.sessions.length;
-  return `Written to Hevy: ${block.name}, ${count} session${count === 1 ? '' : 's'} — ${names}.`;
+  return `Block written to Hevy: ${block.name}, ${count} session${count === 1 ? '' : 's'} — ${sessionNames(block)}. ${CONTINUE_BRIEFLY}`;
 }
 
 /** The written block and the coach's words about it, for callers that name the routines themselves. */
@@ -135,10 +145,15 @@ export async function runProgram(deps: CoachDeps, input: ProgramInput): Promise<
   return { analysis: plan.analysis, block };
 }
 
-/** What the chat tool answers with: the analysis, then the sentence naming what was written. */
-export async function createProgram(deps: CoachDeps, input: ProgramInput): Promise<string> {
+/** The chat tool's two halves: the athlete reads `analysis` as it lands, the model continues from `confirmation`. */
+export interface ProgramReply {
+  analysis: string;
+  confirmation: string;
+}
+
+export async function createProgram(deps: CoachDeps, input: ProgramInput): Promise<ProgramReply> {
   const { analysis, block } = await runProgram(deps, input);
-  return `${analysis}\n\n${blockSummary(block)}`;
+  return { analysis: [analysis, routineNamesLine(block)].join('\n\n'), confirmation: blockConfirmation(block) };
 }
 
 /** `strict` should keep the model inside the schema; this rejects the call rather than trusting it, since the profile is written to state. */

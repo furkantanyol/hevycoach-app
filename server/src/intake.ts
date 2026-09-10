@@ -1,4 +1,4 @@
-import { type CoachDeps, runProgram } from './coach.js';
+import { type CoachDeps, routineNamesLine, runProgram } from './coach.js';
 import { type Prefill, prefillFrom, PREFILL_WORKOUTS } from './derived.js';
 import { historySummary, recentWorkouts } from './hevy.js';
 import { type Answer, answerOf, CHANGED, DONE, interpret, isPath, YES } from './intake-answer.js';
@@ -7,7 +7,6 @@ import type { IntakePath, IntakeStep, Message, Profile, State } from './state.js
 import { newMessage } from './thread.js';
 
 const INITIAL_REASON = 'Initial intake';
-const OPEN_IN_HEVY = 'Open Hevy → Routines → HevyCoach: ';
 /** The one line the new-to-Hevy script closes on: nothing reaches the coach that is not logged. */
 const LOG_IN_HEVY = "Log your sessions in Hevy and I'll read them.";
 const PLAN_FAILED = 'I could not write your block into Hevy just then. Ask me to try again and I will.';
@@ -138,9 +137,8 @@ async function writePlan(turn: Turn, profile: Profile): Promise<void> {
   const { deps } = turn;
   try {
     const { analysis, block } = await runProgram(deps, { profile, reason: INITIAL_REASON });
-    const names = block.sessions.map((session) => session.name).join(', ');
     const tail = turn.path === 'new' ? [LOG_IN_HEVY] : [];
-    deps.state.messages.push(newMessage('assistant', [analysis, `${OPEN_IN_HEVY}${names}`, ...tail].join('\n\n'), { kind: 'plan' }));
+    deps.state.messages.push(newMessage('assistant', [analysis, routineNamesLine(block), ...tail].join('\n\n'), { kind: 'plan' }));
   } catch (error) {
     deps.log(`${PLAN_LOG_FAILED}: ${describe(error)}`);
     deps.state.messages.push(newMessage('assistant', PLAN_FAILED));

@@ -21,6 +21,7 @@ const USER_TEXT = 'four days a week';
 const AGREED_TEXT = 'yes, do it';
 const PARTIAL_TEXT = 'Squat day it is.';
 const PLAN_REPLY = 'Your block is in Hevy.';
+const ANALYSIS = 'Squat has stalled. Load comes down, volume stays.';
 const CLOSING_REPLY = 'Done.';
 const APPLIED_TEXT = `Updated ${SESSION_NAME} in Hevy.`;
 const KEPT_TEXT = 'Kept as is.';
@@ -53,7 +54,7 @@ const BLOCK: Block = {
 const PENDING: PendingProposal = { sessionIndex: 0, exercises: EXERCISES, messageId: 'm-review' };
 
 const PLAN_JSON = JSON.stringify({
-  analysis: 'Squat has stalled. Load comes down, volume stays.',
+  analysis: ANALYSIS,
   block: {
     name: BLOCK.name,
     weeks: BLOCK.weeks,
@@ -63,6 +64,13 @@ const PLAN_JSON = JSON.stringify({
     ],
   },
 });
+
+const SESSION_NAMES = `${SESSION_NAME}, ${SECOND_SESSION_NAME}`;
+const SESSION_COUNT = 2;
+/** What the athlete reads the moment the block lands: the model's analysis, closed by the line naming the routines. */
+const POSTED_ANALYSIS = `${ANALYSIS}\n\nOpen Hevy → Routines → HevyCoach: ${SESSION_NAMES}`;
+const SAVED_PLAN_TEXT = `\n\n${POSTED_ANALYSIS}\n\n${PLAN_REPLY}`;
+const CONFIRMATION = `Block written to Hevy: ${BLOCK.name}, ${SESSION_COUNT} sessions — ${SESSION_NAMES}. The analysis has already been shown to the athlete; add at most two short lines: what to do first and one question. Do not repeat the analysis.`;
 
 /** One streamed assistant turn: plain text (optionally cut short by an API error), or a single tool call. */
 type Streamed = { text: string; fail?: true } | { tool: string; input: object };
@@ -206,6 +214,34 @@ describe('chatTurn', () => {
     expect(state.messages[1].block).not.toBe(state.block);
   });
 
+  it('should stream the analysis as soon as the block is written', async () => {
+    const { deps } = harness(planTurn(), [PLAN_JSON]);
+    const chunks: string[] = [];
+
+    await chatTurn(deps, USER_TEXT, (chunk) => chunks.push(chunk));
+
+    expect(chunks.join('')).toContain(`\n\n${POSTED_ANALYSIS}\n\n${PLAN_REPLY}`);
+  });
+
+  it('should keep the analysis in the saved plan message', async () => {
+    const { deps, state } = harness(planTurn(), [PLAN_JSON]);
+
+    await chatTurn(deps, USER_TEXT, () => {});
+
+    expect(state.messages[1].text).toBe(SAVED_PLAN_TEXT);
+  });
+
+  it('should answer the create_program call with the short confirmation rather than the analysis', async () => {
+    const { deps, sent } = harness(planTurn(), [PLAN_JSON]);
+
+    await chatTurn(deps, USER_TEXT, () => {});
+
+    expect(sent[2].messages.at(-1)).toEqual({
+      role: 'user',
+      content: [{ type: 'tool_result', tool_use_id: 'toolu_1', content: CONFIRMATION }],
+    });
+  });
+
   it('should persist the text it already streamed when the turn fails midway', async () => {
     const { deps, saved } = harness([{ text: PARTIAL_TEXT, fail: true }]);
 
@@ -242,7 +278,7 @@ describe('chatTurn', () => {
       vi.useRealTimers();
     }
 
-    expect(state.messages[1].text).toBe(PLAN_REPLY);
+    expect(state.messages[1].text).toBe(SAVED_PLAN_TEXT);
   });
 
   it('should leave the plan fields off a turn that wrote no block', async () => {

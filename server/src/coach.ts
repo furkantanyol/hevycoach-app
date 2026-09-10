@@ -2,7 +2,7 @@ import type Anthropic from '@anthropic-ai/sdk';
 import type { HevyClient, Workout } from '@furkantanyol/hevy-client';
 import { BLOCK_SCOPE, checkBlock, type Violation } from './guard.js';
 import { findSession, formatWorkout, historySummary, templateCatalogue, writeRoutines } from './hevy.js';
-import { createProgram, programInput } from './plan.js';
+import { createProgram, programInput, type ProgramReply } from './plan.js';
 import { CREATE_PROGRAM_TOOL } from './prompt.js';
 import { PUSH_BODY_MAX } from './push.js';
 import { APPLY_PROPOSAL_TOOL, chatRequest, DISCARD_PROPOSAL_TOOL, reviewRequest, textOf, toAnthropicMessages } from './requests.js';
@@ -10,15 +10,16 @@ import { MEMORY_MAX_CHARACTERS, NO_TARGETS, reviewTask } from './review-prompt.j
 import type { Block, Choice, Exercise, Message, PendingProposal, Session, State } from './state.js';
 import { appended, type MessageExtras, newMessage } from './thread.js';
 
-export { createProgram, programInput, runProgram, type Program, type ProgramInput } from './plan.js';
+export { createProgram, programInput, routineNamesLine, runProgram, type Program, type ProgramInput } from './plan.js';
 
 const MAX_TOOL_ROUNDS = 3;
 /** The proxy in front of the server closes a streamed response after ~100 s of silence; a plan call takes longer than that. */
 const KEEPALIVE_MS = 15_000;
 
-const PROGRESS_LINE = '\n\nReading your history and writing your block';
+/** A blank line: what separates the progress line, the analysis and the model's own words in the thread. */
+const PARAGRAPH = '\n\n';
+const PROGRESS_LINE = `${PARAGRAPH}Reading your history and writing your block`;
 const HEARTBEAT = '.';
-const PROGRESS_END = '\n\n';
 const UNKNOWN_TOOL = 'unknown tool';
 const BAD_TOOL_INPUT = 'create_program was called with an unreadable input';
 const UNMATCHED_PROPOSAL = 'review proposed a session the block does not hold:';
@@ -62,6 +63,12 @@ interface ReviewResult {
 
 type Write = (chunk: string) => void;
 
+/** `write` only reaches the screen, for progress the thread does not keep; `say` also lands in the message that is saved. */
+interface Voice {
+  write: Write;
+  say: Write;
+}
+
 function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -72,20 +79,25 @@ function toolResult(id: string, content: string, isError?: true): Anthropic.Tool
   return { type: 'tool_result', tool_use_id: id, content, ...(isError ? { is_error: true } : {}) };
 }
 
-async function programResult(deps: CoachDeps, call: Anthropic.ToolUseBlock, write: Write): Promise<Anthropic.ToolResultBlockParam> {
+/** The athlete reads the analysis the moment the block is written; the model only gets a confirmation, so it cannot summarise over it. */
+async function programResult(deps: CoachDeps, call: Anthropic.ToolUseBlock, voice: Voice): Promise<Anthropic.ToolResultBlockParam> {
   const input = programInput(call.input);
   if (!input) return toolResult(call.id, BAD_TOOL_INPUT, true);
 
-  write(PROGRESS_LINE);
-  const heartbeat = setInterval(() => write(HEARTBEAT), KEEPALIVE_MS);
+  voice.write(PROGRESS_LINE);
+  const heartbeat = setInterval(() => voice.write(HEARTBEAT), KEEPALIVE_MS);
+  const endProgress = (): void => {
+    clearInterval(heartbeat);
+    voice.write(PARAGRAPH);
+  };
+
   try {
-    return toolResult(call.id, await createProgram(deps, input));
+    const program: ProgramReply = await createProgram(deps, input).finally(endProgress);
+    voice.say(`${PARAGRAPH}${program.analysis}${PARAGRAPH}`);
+    return toolResult(call.id, program.confirmation);
   } catch (error) {
     deps.log(`create_program failed: ${describe(error)}`);
     return toolResult(call.id, describe(error), true);
-  } finally {
-    clearInterval(heartbeat);
-    write(PROGRESS_END);
   }
 }
 
@@ -103,8 +115,8 @@ async function proposalResult(
   }
 }
 
-async function runToolCall(deps: CoachDeps, call: Anthropic.ToolUseBlock, write: Write): Promise<Anthropic.ToolResultBlockParam> {
-  if (call.name === CREATE_PROGRAM_TOOL.name) return programResult(deps, call, write);
+async function runToolCall(deps: CoachDeps, call: Anthropic.ToolUseBlock, voice: Voice): Promise<Anthropic.ToolResultBlockParam> {
+  if (call.name === CREATE_PROGRAM_TOOL.name) return programResult(deps, call, voice);
   if (call.name === APPLY_PROPOSAL_TOOL.name) return proposalResult(deps, call, applyProposal);
   if (call.name === DISCARD_PROPOSAL_TOOL.name) return proposalResult(deps, call, discardProposal);
   return toolResult(call.id, `${UNKNOWN_TOOL} ${call.name}`, true);
@@ -128,22 +140,24 @@ export async function chatTurn(deps: CoachDeps, text: string, write: Write): Pro
   await deps.save();
   const messages = toAnthropicMessages(deps.state.messages);
   const spoken: string[] = [];
+  const say = (chunk: string): void => {
+    spoken.push(chunk);
+    write(chunk);
+  };
+  const voice: Voice = { write, say };
   let planned = false;
 
   try {
     for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
       const stream = deps.anthropic.messages.stream(chatRequest(deps.state, deps.models.chat, messages));
-      stream.on('text', (delta) => {
-        spoken.push(delta);
-        write(delta);
-      });
+      stream.on('text', say);
       const message = await stream.finalMessage();
       if (message.stop_reason !== 'tool_use') break;
 
       const calls = message.content.filter((block): block is Anthropic.ToolUseBlock => block.type === 'tool_use');
       const results: Anthropic.ToolResultBlockParam[] = [];
       for (const call of calls) {
-        const result = await runToolCall(deps, call, write);
+        const result = await runToolCall(deps, call, voice);
         planned = planned || (call.name === CREATE_PROGRAM_TOOL.name && result.is_error !== true);
         results.push(result);
       }
