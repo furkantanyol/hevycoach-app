@@ -27,3 +27,17 @@ The plumbing under `src/` is committed and runs on the simulator against the liv
 ## Do not change
 
 Dependency list (see `docs/spec.md`; `assistant-cloud` is there for a reason), the adapter's request shapes, `EXPO_PUBLIC_*` env names, anything under `server/`.
+
+## Update 2026-09-10 17:15: four tabs and onboarding are in place
+
+Since the note above, the owner decided on four tabs and a native onboarding (spec amendment at the end of `docs/spec.md`). All of it is committed, unstyled beyond `theme.ts`, and runs on the simulator against the live server. The surface pass now covers:
+
+- `src/app/(tabs)/_layout.tsx`: labels-only tab bar (Coach, Plan, Progress, Profile), tint from the theme.
+- `src/app/(tabs)/coach.tsx`: the thread (unchanged data path).
+- `src/app/(tabs)/plan.tsx` + `src/components/plan/*`: block title and caption, the next session pinned with its full exercise list, other sessions collapsed to Hevy's one-line summary, completions with the verdict's first line, empty state.
+- `src/app/(tabs)/progress.tsx` + `src/components/progress/*`: stats row, one card per lift with best set and e1RM trend (three numbers and an arrow glyph).
+- `src/app/(tabs)/profile.tsx` + `src/components/profile/profile-rows.tsx`: one card per intake step, rows label/value/chevron, rebuild action.
+- `src/app/onboarding/index.tsx` + `src/components/onboarding/*`: six steps, pills for single and multi select, numeric inputs, notes field, review step, the streamed build card.
+- Shared: `src/components/screen.tsx` (Screen, ScreenTitle at 34/700, SectionLabel, InlineError), `src/lib/options.ts` (all human labels), `src/lib/server.ts` (`useServer`).
+
+Known gaps for the pass: the pinned Next card can show a past verdict for that session; InlineError double-pads inside gutter-padded screens; "Start setup" from the empty Plan restarts all steps; the tab bar has no glyphs (no icon package is installed; SF Symbols would need `expo-symbols`, which is not in the dependency list).
