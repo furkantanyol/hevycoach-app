@@ -209,3 +209,28 @@ GET /health · GET /messages · POST /messages · POST /device · POST /webhook/
 ### Deleted
 
 App: `(tabs)/`, `onboarding/`, `profile/`, plan, progress, profile components, onboarding components, `lib/onboarding-*`, `lib/options.ts`, ui primitives. Server: `/profile`, `/prefill`, `/block`, `/progress` routes and their views (keep the prefill derivation as an internal helper for the intake defaults), `validateProfile` for the old shape.
+
+## Amendment 2026-09-10 21:00: carousel, native components, structured chat, intake branch
+
+Approved by the owner after reviewing Hevy's own widget and the plan message. Supersedes the screen and intake parts of the 18:00 amendment; routes and state otherwise stand.
+
+### Screen
+
+- Native Stack header titled "Coach" (Liquid Glass on iOS 26 for free). The week strip is gone; its facts live in the cards.
+- Top third: `react-native-pager-view` carousel over an `expo-linear-gradient` (accent at 12% to white), three cards as `GlassView` (`expo-glass-effect`, style regular) when `isGlassEffectAPIAvailable()`, else a white card with a hairline border; page dots under the pager.
+- Cards from `GET /cards`: (1) Week volume: label "Volume", total kg as "38.3k kg", caption "N sessions this week", seven bars Mon–Sun drawn by `@expo/ui/swift-ui` `Chart` (type bar, `barStyle.cornerRadius` 4) inside a `Host`, with a plain-View bar fallback behind a flag. (2) Last workout: title, relative time, the top four lifts by volume as "Bench Press · 4 × 5 × 90 kg · 1,800 kg". (3) Next session: routine name, first four exercise titles, caption "Open it in Hevy".
+- Bottom two thirds: the thread and the composer. SwiftUI hosts appear only inside the carousel, never in a chat bubble.
+- Rich text: assistant text parts render markdown with `@ronradtke/react-native-markdown-display` once complete; plain text while streaming. Bold, bullets and short headings only.
+- Inline input: a coach message may carry `input: { kind: 'bodyweight', unit: 'kg' }` instead of choices; the app renders a numeric `TextInput` with the unit and a Send button under that message (last-message gated like pills); submitting posts `{ text: '84' }`. `keyboardShouldPersistTaps="handled"` on the thread list.
+
+### Server
+
+- `GET /cards` → `{ weekVolume: { totalKg, sessions, byDay: [{ day: 'Mon' | … | 'Sun', kg }] }, lastWorkout: { title, at, lifts: [{ title, sets, reps, weightKg, volumeKg }] } | null, nextSession: { name, exercises: string[] } | null }`. Volume = Σ weight × reps over working sets (warm-ups excluded), current week Monday to Sunday local; lifts grouped by exercise (sets count, most common reps, top weight, summed volume), top four by volume. `GET /week` is removed.
+- Messages gain `input?: { kind: 'bodyweight'; unit: 'kg' }`.
+- Intake opens with "New to Hevy, or been logging for a while?" with choices New to Hevy → `new`, Been logging → `existing`. Existing path: goals, daysPerWeek, injuries, bodyweight confirm (pills "Yes, 82 kg" / "It changed" → the inline field). New path: yearsTraining (pills), daysPerWeek, equipment (pills), goals, injuries, bodyweight (inline field); its plan message adds one line: "Log your sessions in Hevy and I'll read them."
+- Multi-answer questions loop: after a tap the coach replies "<Label>, noted. Anything else?" with the remaining pills plus "No, that's it" (value `done`); typing still works at every step.
+- Structured messages, markdown written by the model: plan = `**Where you stand**` (three bullets), `**Your block**` (name and weeks, then one bullet per session), `**This week**` (two bullets), then the routine names line. Review = `**Went well**`, `**Push next time**`, `**Proposed change**` (only with a proposal), then the question as plain text. The voice rules stay (short lines, one question).
+
+### Dependencies added at the root
+
+`@expo/ui`, `expo-glass-effect`, `expo-linear-gradient`, `react-native-pager-view` (Expo-pinned), `@ronradtke/react-native-markdown-display`. Native rebuild required.
