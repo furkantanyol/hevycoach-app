@@ -46,6 +46,12 @@ Interview: Friday 2026-09-11 16:00 (Europe/Madrid). Each step ends in a demoable
 - [ ] Simulator: intake with pills → plan → replayed workout → review → apply; screenshots to the owner.
 - [ ] Owner: device build tonight; one real workout for the delivery contract.
 
+## Step 2d — carousel, native components, structured chat (2026-09-10 21:00, owner decision)
+
+- [ ] Server: GET /cards, intake opens with new-vs-existing, anything-else loops, inline bodyweight input message, markdown-structured plan and review prompts; /week removed; tests.
+- [ ] App: native Stack header, glass cards over a gradient (Swift Charts week volume, last workout lifts, next session), markdown rendering, inline bodyweight field.
+- [ ] Native rebuild (prebuild --clean) for the simulator; simulator pass with screenshots; then the owner's device build with push credentials.
+
 ## Step 3 — polish and narrative (2026-09-11 morning)
 
 - [ ] Styling per the impeccable direction.

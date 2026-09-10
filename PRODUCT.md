@@ -33,7 +33,7 @@ Success: the demo loop runs end to end on 2026-09-11 (chat → plan → routines
 ## Operating Context
 
 - **Hevy keeps the set and the routine.** During a session the user is in Hevy, following a routine the coach wrote into the "HevyCoach" folder. The thread is never consulted between sets and never shows the next target; it is the conversation around the training, not the training.
-- **The app is one screen**: the chat with the coach under a one-line week strip from Hevy, plus push notifications (decided 2026-09-10 18:00 after looking at Hevy Coach's client side: this is the client chat, with an AI coach). It stores nothing. Routines are viewed in Hevy, never here.
+- **The app is one screen** (decided 2026-09-10 18:00, refined 21:00): a native "Coach" header, a top third of swipeable glass cards over a soft gradient (week volume with a native Swift Charts bar chart, last workout's top lifts, next session), and the chat in the bottom two thirds, plus push notifications. It stores nothing. Routines are viewed in Hevy, never here.
 - **Push is the front door.** A verdict push carries the session name as title and the message as body (truncated to ~170 characters). Tapping it opens the thread.
 - **The coach is a small Fastify server** the owner runs locally, reachable through a Cloudflare Tunnel at `coach.furkantanyol.com`, state in one JSON file. Runs on the owner's Mac for the demo, on a Hetzner box afterwards.
 - **Reference implementation of the mechanics**: the owner's Telegram coach `furkan-ai` on a VPS (`docs/research/furkan-ai-coaching-mechanics.md`) and the methodology in `hevy-coach/prompts/COACH.md`.
@@ -42,13 +42,13 @@ Success: the demo loop runs end to end on 2026-09-11 (chat → plan → routines
 
 Confirmed (`docs/spec.md`, approved 2026-09-10):
 
-- The thread streams the coach's reply. History loads on mount and on foreground. Intake happens in the chat as four scripted questions with tappable options (typing allowed); the coach then writes the block into Hevy and names the routines to open. After every workout the coach posts a review with a proposed routine change and "Apply changes" / "Keep as is" pills; nothing in Hevy changes without the user's yes.
+- The thread streams the coach's reply and renders it as structured rich text (bold headings, bullets). Intake happens in the chat: it first asks whether the user is new to Hevy, then a short scripted set with tappable options that go straight into the chat (multi-answer questions loop with "anything else?"), one inline numeric field for bodyweight, typing allowed everywhere; the coach then writes the block into Hevy and names the routines to open. After every workout the coach posts a review with a proposed routine change and "Apply changes" / "Keep as is" pills; nothing in Hevy changes without the user's yes.
 - `create_program` is the only write. Routines go into the "HevyCoach" folder of the owner's account and nowhere else; existing routines outside it are never touched.
 - Scope: training, recovery, mobility, and nutrition as it relates to training. Anything else gets one line declining and a redirect.
 - Safety: pain or injury → ask where, when, how bad, then program conservatively. Red flags → tell them to see a professional. No diagnoses.
 - All user-written text is untrusted input to the model. The model can only reach Hevy through the one guarded tool.
 - Terminology: **block** (a 4–6 week mesocycle), **session** (one routine in the block), **plan** (the message that introduces a block), **verdict** (the judgement of one finished workout), **intake** (the first-contact questions), **memory** (the coach's rolling notes), **template** (a Hevy exercise).
-- Stack: Expo SDK 57, React Native 0.86, New Architecture, expo-router, `@assistant-ui/react-native`, TypeScript strict. The dependency list in the spec is closed; nothing else gets added without a reason. Light and dark both ship (`userInterfaceStyle: automatic`, dark splash variant).
+- Stack: Expo SDK 57, React Native 0.86, New Architecture, expo-router, `@assistant-ui/react-native`, `@expo/ui` (SwiftUI, Swift Charts), `expo-glass-effect`, `react-native-pager-view`, a markdown renderer, TypeScript strict. The dependency list in the spec is closed; nothing else gets added without a reason. Light and dark both ship (`userInterfaceStyle: automatic`, dark splash variant).
 - Tests cover server logic only. No UI tests.
 - Out of scope for v1: multi-user, accounts, encrypted key storage, rate limits, Apple Health, offline mirror, daily scheduled pushes, Android, web.
 
