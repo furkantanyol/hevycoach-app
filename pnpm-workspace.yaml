@@ -10,4 +10,4 @@ allowBuilds:
   esbuild: true
   unrs-resolver: true
 minimumReleaseAgeExclude:
-  - '@furkantanyol/hevy-client@1.0.0'
+  - 'hevy-sdk@1.0.0'

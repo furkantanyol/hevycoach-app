@@ -1,4 +1,4 @@
-import type { Workout } from '@furkantanyol/hevy-client';
+import type { Workout } from 'hevy-sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { prefillFrom } from './derived.js';
 import type { ExerciseHistory, HistorySummary } from './hevy.js';

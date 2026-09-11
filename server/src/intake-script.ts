@@ -1,29 +1,28 @@
 /**
- * The scripted intake as the athlete sees it: the question at each step, the pills under it, and how a
- * multi-answer loop narrows as they pick. `intake.ts` walks these; `intake-answer.ts` reads the replies.
+ * The scripted intake as the athlete sees it: the question at each step and the pills under it.
+ * `intake.ts` walks these; `intake-answer.ts` reads the replies.
  */
-import { DAYS_PER_WEEK, DONE, NOTHING } from './intake-answer.js';
-import type { Choice, Equipment, Goal, Injury, IntakePath, IntakeStep, MessageInput, Profile, YearsTraining } from './state.js';
+import { DAYS_PER_WEEK, NOTHING } from './intake-answer.js';
+import type { Choice, Equipment, Goal, Injury, IntakePath, IntakeStep, YearsTraining } from './state.js';
 
-export const ANYTHING_ELSE = 'Anything else?';
-
-/** A question with `input` asks for a number instead of offering pills. */
+/** A question with no pills is answered in the composer; a `multi` question's pills are picked together and sent as one list. */
 export interface Question {
   step: IntakeStep;
   text: string;
   choices: Choice[];
-  input?: MessageInput;
+  multi?: true;
 }
-
-export type LoopStep = 'goals' | 'injuries';
-
-const BODYWEIGHT_INPUT: MessageInput = { kind: 'bodyweight', unit: 'kg' };
 
 /** The pills for one step: the value the app sends back, in the words the athlete reads. */
 const pills = (labels: Record<string, string>): Choice[] =>
   Object.entries(labels).map(([value, label]) => ({ label, value }));
 
-const PATH_CHOICES = pills({ new: 'New to Hevy', existing: 'Been logging' } satisfies Record<IntakePath, string>);
+/**
+ * The two ways on from a history: a fresh block (the existing script, which still reads years and
+ * equipment off Hevy) or one that builds on the routines they run. "Start new" is not the new-to-Hevy
+ * path — a thin history alone chooses that one, before any question.
+ */
+const JOURNEY_CHOICES = pills({ existing: 'Start new', continue: 'Continue' } satisfies Partial<Record<IntakePath, string>>);
 
 const YEAR_CHOICES = pills({ '<1': 'Less than a year', '1-3': '1 to 3 years', '3-5': '3 to 5 years', '5+': '5 years or more' } satisfies Record<YearsTraining, string>);
 
@@ -42,51 +41,36 @@ const GOAL_CHOICES = pills({
   athletic: 'Athletic performance',
 } satisfies Record<Goal, string>);
 
-/** "Nothing" is offered on the first ask only: once something is named there is nothing left to clear. */
-const INJURY_CHOICES = pills({
-  knee: 'Knee',
-  shoulder: 'Shoulder',
-  lower_back: 'Lower back',
-  elbow_wrist: 'Elbow or wrist',
-  hip: 'Hip',
-  other: 'Other',
-  [NOTHING]: 'Nothing',
-} satisfies Record<Injury | typeof NOTHING, string>);
+/** "Nothing" answers on its own: the app sends it at once, and it clears whatever else was picked. */
+const INJURY_CHOICES: Choice[] = [
+  ...pills({
+    knee: 'Knee',
+    shoulder: 'Shoulder',
+    lower_back: 'Lower back',
+    elbow_wrist: 'Elbow or wrist',
+    hip: 'Hip',
+    other: 'Other',
+  } satisfies Record<Injury, string>),
+  { label: 'Nothing', value: NOTHING, exclusive: true },
+];
 
 const DAY_CHOICES: Choice[] = DAYS_PER_WEEK.map((days) => ({ label: String(days), value: String(days) }));
 
-const DONE_CHOICE: Choice = { label: "No, that's it", value: DONE };
-
 /** The bodyweight confirmation is not here: it is rebuilt from the history, which holds its number. */
 export const QUESTIONS: Record<Exclude<IntakeStep, 'bodyweight'>, Question> = {
-  start: { step: 'start', text: 'New to Hevy, or been logging for a while?', choices: PATH_CHOICES },
+  journey: {
+    step: 'journey',
+    text: "Start a new journey, or continue the one you're on? I'll review it and build from there.",
+    choices: JOURNEY_CHOICES,
+  },
   yearsTraining: { step: 'yearsTraining', text: 'How long have you been training?', choices: YEAR_CHOICES },
   daysPerWeek: { step: 'daysPerWeek', text: 'How many days a week?', choices: DAY_CHOICES },
   equipment: { step: 'equipment', text: 'What do you train with?', choices: EQUIPMENT_CHOICES },
-  goals: { step: 'goals', text: 'What are you training for?', choices: GOAL_CHOICES },
-  injuries: { step: 'injuries', text: 'Anything to work around?', choices: INJURY_CHOICES },
-  bodyweightValue: { step: 'bodyweightValue', text: 'What is it now?', choices: [], input: BODYWEIGHT_INPUT },
+  goals: { step: 'goals', text: 'What are you training for?', choices: GOAL_CHOICES, multi: true },
+  injuries: { step: 'injuries', text: 'Anything to work around?', choices: INJURY_CHOICES, multi: true },
+  bodyweightValue: { step: 'bodyweightValue', text: 'What is it now, in kilograms?', choices: [] },
+  notes: { step: 'notes', text: 'Anything else I should know before I write your block?', choices: pills({ [NOTHING]: 'Nothing to add' }) },
 };
 
 /** Asked in place of the confirmation when there is no measurement to confirm. */
-export const WEIGH_QUESTION: Question = { step: 'bodyweightValue', text: 'What do you weigh, in kilograms?', choices: [], input: BODYWEIGHT_INPUT };
-
-export const isLoopStep = (step: IntakeStep): step is LoopStep => step === 'goals' || step === 'injuries';
-
-export const chosen = (step: LoopStep, answers: Partial<Profile>): readonly string[] =>
-  (step === 'goals' ? answers.goals : answers.injuries) ?? [];
-
-/** The first ask offers everything; every later ask drops what they picked and offers the way out. */
-export function loopQuestion(step: LoopStep, answers: Partial<Profile>): Question {
-  const question = QUESTIONS[step];
-  const picked = chosen(step, answers);
-  if (picked.length === 0) return question;
-  const left = question.choices.filter((choice) => choice.value !== NOTHING && !picked.includes(choice.value));
-  return { step, text: ANYTHING_ELSE, choices: [...left, DONE_CHOICE] };
-}
-
-/** "Muscle, noted." names what this answer added, in the words the pills use. */
-export function labelsOf(step: LoopStep, values: readonly string[]): string {
-  const { choices } = QUESTIONS[step];
-  return values.map((value) => choices.find((choice) => choice.value === value)?.label ?? value).join(', ');
-}
+export const WEIGH_QUESTION: Question = { step: 'bodyweightValue', text: 'What do you weigh, in kilograms?', choices: [] };

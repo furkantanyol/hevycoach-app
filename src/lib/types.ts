@@ -9,6 +9,8 @@
 export interface Choice {
   readonly label: string;
   readonly value: string;
+  /** Answers a multi-select question by itself: tapping it sends at once. */
+  readonly exclusive?: true;
 }
 
 /** GET /messages, and every turn POST /messages appends to the thread. */
@@ -17,9 +19,11 @@ export interface Message {
   readonly role: 'user' | 'assistant';
   readonly text: string;
   readonly createdAt: string;
-  readonly kind?: 'plan' | 'review';
+  readonly kind?: 'plan' | 'review' | 'logged';
   readonly choices?: readonly Choice[];
-  readonly input?: { readonly kind: 'bodyweight'; readonly unit: 'kg' };
+  /** Pills toggle and "Done" sends them together as one list. */
+  readonly multi?: true;
+  readonly block?: PlanBlock;
 }
 
 /** One day's working-set volume: one Mon–Sun bar of the volume card's chart. */
@@ -35,6 +39,28 @@ export interface Lift {
   readonly reps: number;
   readonly weightKg: number;
   readonly volumeKg: number;
+}
+
+/** One exercise of a written session, as the server planned and Hevy now holds it. */
+export interface PlanExercise {
+  readonly title: string;
+  readonly sets: number;
+  readonly reps: number;
+  readonly weightKg: number;
+  readonly rpe: number;
+}
+
+export interface PlanSession {
+  readonly name: string;
+  readonly focus: string;
+  readonly exercises: readonly PlanExercise[];
+}
+
+/** The block a plan message wrote into Hevy; the session cards under the message draw it. */
+export interface PlanBlock {
+  readonly name: string;
+  readonly weeks: number;
+  readonly sessions: readonly PlanSession[];
 }
 
 /** GET /cards — everything the three carousel cards draw, in one read. */

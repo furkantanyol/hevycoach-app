@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { createHevyClient } from '@furkantanyol/hevy-client';
+import { createHevyClient } from 'hevy-sdk';
 import { describe, expect, it } from 'vitest';
 import { applyProposal, type CoachDeps, discardProposal, review } from './coach.js';
 import { MEMORY_MAX_CHARACTERS } from './review-prompt.js';
@@ -100,7 +100,7 @@ function hevyStub() {
     '/v1/workouts': () => listed('workouts', [workout]),
     '/v1/body_measurements': () => listed('body_measurements', []),
     '/v1/exercise_templates': () => listed('exercise_templates', [{ id: TEMPLATE_ID, title: TEMPLATE_TITLE, type: 'weight_reps', primary_muscle_group: 'quadriceps', secondary_muscle_groups: [], equipment: 'barbell', is_custom: false }]),
-    '/v1/routine_folders': () => listed('routine_folders', [{ id: FOLDER_ID, index: 0, title: 'HevyCoach', updated_at: '', created_at: '' }]),
+    '/v1/routine_folders': () => listed('routine_folders', [{ id: FOLDER_ID, index: 0, title: 'Coach', updated_at: '', created_at: '' }]),
     [`/v1/routines/${ROUTINE_ID}`]: () => ({ routine: { id: ROUTINE_ID } }),
   };
 
@@ -132,12 +132,21 @@ function harness(texts: string[] = [], seed: Partial<State> = {}) {
 }
 
 describe('review', () => {
+  it('should post a workout-logged line the moment the workout is read, before the review', async () => {
+    const { deps, state } = harness([reviewJson(proposalOf(SESSION_NAME))]);
+
+    await review(deps, WORKOUT_ID);
+
+    const [logged, reviewed] = state.messages.slice(-2);
+    expect([logged?.text.startsWith('**Workout logged**'), logged?.text.includes(workout.title), logged?.kind, reviewed?.kind]).toEqual([true, true, 'logged', 'review']);
+  });
+
   it('should offer the apply and keep choices when the coach proposes a change', async () => {
     const { deps, state } = harness([reviewJson(proposalOf(SESSION_NAME))]);
 
     await review(deps, WORKOUT_ID);
 
-    expect(state.messages[0].choices).toEqual(CHOICES);
+    expect(state.messages.at(-1)?.choices).toEqual(CHOICES);
   });
 
   it('should save the proposal against the session it names', async () => {
@@ -145,7 +154,7 @@ describe('review', () => {
 
     await review(deps, WORKOUT_ID);
 
-    expect(state.pendingProposal).toEqual({ sessionIndex: 0, exercises: [squat(PROPOSED_KG)], messageId: state.messages[0].id });
+    expect(state.pendingProposal).toEqual({ sessionIndex: 0, exercises: [squat(PROPOSED_KG)], messageId: state.messages.at(-1)?.id });
   });
 
   it('should fall back to the routine the workout ran when the proposal names no known session', async () => {
@@ -161,7 +170,7 @@ describe('review', () => {
 
     await review(deps, WORKOUT_ID);
 
-    expect(state.messages[0].choices).toBeUndefined();
+    expect(state.messages.at(-1)?.choices).toBeUndefined();
   });
 
   it('should clear a proposal still pending when the new review proposes nothing', async () => {
@@ -185,7 +194,7 @@ describe('review', () => {
 
     await review(deps, WORKOUT_ID);
 
-    expect(state.messages[0]).toMatchObject({ kind: 'review', session: SESSION_NAME });
+    expect(state.messages.at(-1)).toMatchObject({ kind: 'review', session: SESSION_NAME });
   });
 
   it('should push the first line of the review', async () => {
@@ -224,6 +233,7 @@ describe('applyProposal', () => {
         body: {
           routine: {
             title: SESSION_NAME,
+            folder_id: FOLDER_ID,
             exercises: [
               {
                 exercise_template_id: TEMPLATE_ID,

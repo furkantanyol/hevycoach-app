@@ -5,21 +5,43 @@ import {
   type TextMessagePartComponent,
 } from '@assistant-ui/react-native';
 import Markdown, { type MarkdownStyleMap } from '@ronradtke/react-native-markdown-display';
-import { useEffect, useMemo, useState } from 'react';
-import { Animated, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useMemo } from 'react';
+import { StyleSheet, Text } from 'react-native';
+import Animated, {
+  FadeInDown,
+  cancelAnimation,
+  useAnimatedStyle,
+  useSharedValue,
+  withDelay,
+  withRepeat,
+  withSequence,
+  withTiming,
+} from 'react-native-reanimated';
 
 import { ChoicePills } from './choices';
 import { ReviewCaption } from './coach-metadata';
-import { BodyweightInput } from './inline-input';
+import { PlanCards } from './plan-cards';
+import { useSmooth } from '../../lib/use-smooth';
 import { Radius, useTheme, type Palette } from './theme';
 
 const DOT_FADE_MS = 400;
+const DOT_MIN_OPACITY = 0.3;
+const DOT_STAGGER_MS = 160;
+/** A new bubble settles in from just below its place; the thread reads as a conversation arriving, not a list redrawing. */
+const ENTER_MS = 220;
+/** The server marks a status for the wait; the app appends the ellipsis so it reads as in progress. */
+const REVIEWING = 'Reviewing it now';
+const ELLIPSIS = '…';
 /** Between paragraphs, lists and headings — the 8pt rhythm, not the library's 10. */
 const BLOCK_GAP = 8;
+/** A burst (the model writes 400 characters in two seconds) types out over about a second and a half; a slow trickle is not held back. */
+const SMOOTH = { drainMs: 1500, maxCharIntervalMs: 12 } as const;
+const hasLineBreak = (text: string): boolean => text.includes('\n');
 const LIST_GAP = 4;
 /** The coach writes short headings, so they sit one step above the body, not four. */
 const HEADING_TEXT = { fontSize: 17, lineHeight: 24, fontWeight: '700' } as const;
-const ASSISTANT_TEXT = { fontSize: 16, lineHeight: 25, letterSpacing: -0.2 } as const;
+/** 22, not 25: on the New Architecture a line height far above the font's own drops the last line of a long paragraph (seen live 2026-09-11, twice). */
+const ASSISTANT_TEXT = { fontSize: 16, lineHeight: 22, letterSpacing: -0.2 } as const;
 
 /**
  * Bold, bullets and short headings are all the coach writes, so the map tunes
@@ -60,64 +82,80 @@ const UserText: TextMessagePartComponent = ({ text }) => {
 };
 
 /**
- * Markdown once the part is complete, plain text while it streams: half a bold
- * marker or an unclosed bullet would otherwise reflow the bubble on every chunk.
+ * One bubble per text part, markdown from the first chunk, revealed at the library's typewriter
+ * pace. A one-line reply shrink-wraps like a chat bubble; anything with a line break — a heading, a
+ * list, several paragraphs — takes the full width, because the markdown library sizes list text with
+ * a zero flex basis and paragraphs at 100%, which collapsed a shrink-wrapped bubble to its widest
+ * heading while the lines were measured wide. An empty part draws nothing: the typing bubble stands
+ * for the wait.
  */
-const AssistantText: TextMessagePartComponent = ({ text, status }) => {
+const AssistantText: TextMessagePartComponent = (part) => {
   const { colors, isDark } = useTheme();
   const markdown = useMemo(() => markdownStyles(colors), [colors]);
+  const { text } = useSmooth(part, SMOOTH);
 
-  if (status.type !== 'complete') {
-    return <Text style={[styles.assistantText, { color: colors.foreground }]}>{text}</Text>;
-  }
+  if (text === '') return null;
   return (
-    <Markdown style={markdown} colorScheme={isDark ? 'dark' : 'light'}>
-      {text}
-    </Markdown>
+    <Animated.View
+      entering={FadeInDown.duration(ENTER_MS)}
+      style={[styles.bubble, hasLineBreak(text) && styles.wide, { backgroundColor: colors.muted }]}
+    >
+      <Markdown style={markdown} colorScheme={isDark ? 'dark' : 'light'}>
+        {text}
+      </Markdown>
+    </Animated.View>
   );
 };
 
-function TypingDot({ delay }: { delay: number }) {
+function TypingDot({ delay }: { readonly delay: number }) {
   const { colors } = useTheme();
-  // useState, not useRef: this repo's react-hooks/refs rule forbids reading
-  // `.current` during render, and the value must survive re-renders.
-  const [opacity] = useState(() => new Animated.Value(0.3));
+  const opacity = useSharedValue(DOT_MIN_OPACITY);
 
   useEffect(() => {
-    const anim = Animated.loop(
-      Animated.sequence([
-        Animated.timing(opacity, {
-          toValue: 1,
-          duration: DOT_FADE_MS,
-          delay,
-          useNativeDriver: true,
-        }),
-        Animated.timing(opacity, {
-          toValue: 0.3,
-          duration: DOT_FADE_MS,
-          useNativeDriver: true,
-        }),
-      ]),
+    const pulse = withSequence(
+      withTiming(1, { duration: DOT_FADE_MS }),
+      withTiming(DOT_MIN_OPACITY, { duration: DOT_FADE_MS }),
     );
-    anim.start();
-    return () => anim.stop();
-  }, [opacity, delay]);
+    opacity.set(withDelay(delay, withRepeat(pulse, -1)));
+    return () => cancelAnimation(opacity);
+  }, [delay, opacity]);
+
+  const pulsing = useAnimatedStyle(() => ({ opacity: opacity.get() }));
 
   return (
-    <Animated.View style={[styles.dot, { opacity, backgroundColor: colors.mutedForeground }]} />
+    <Animated.View style={[styles.dot, pulsing, { backgroundColor: colors.mutedForeground }]} />
   );
 }
 
+/** The server's status for the wait ("Reading your workouts"), carried in the message's metadata while it streams. */
+function readStatus(custom: Record<string, unknown>): string | null {
+  const { status } = custom;
+  return typeof status === 'string' && status !== '' ? status : null;
+}
+
+/**
+ * Three pulsing dots, and beside them what the coach is doing when the server says. Shown under
+ * whatever has streamed so far, so a long block write stays legible after the read has landed.
+ */
 function TypingIndicator() {
+  const { colors } = useTheme();
   const isRunning = useAuiState((s) => s.message.status?.type === 'running');
-  if (!isRunning) return null;
+  // A workout just announced by the server: its review is being written, and this is the wait for it.
+  const reviewing = useAuiState((s) => s.message.isLast && s.message.metadata.custom.kind === 'logged');
+  const status = useAuiState((s) => readStatus(s.message.metadata.custom)) ?? (reviewing ? REVIEWING : null);
+  if (!isRunning && !reviewing) return null;
 
   return (
-    <View style={styles.typing}>
+    <Animated.View entering={FadeInDown.duration(ENTER_MS)} style={[styles.bubble, styles.typing, { backgroundColor: colors.muted }]}>
       <TypingDot delay={0} />
-      <TypingDot delay={160} />
-      <TypingDot delay={320} />
-    </View>
+      <TypingDot delay={DOT_STAGGER_MS} />
+      <TypingDot delay={DOT_STAGGER_MS * 2} />
+      {status !== null && (
+        <Text style={[styles.status, { color: colors.mutedForeground }]} numberOfLines={1}>
+          {status + ELLIPSIS}
+        </Text>
+      )}
+    </Animated.View>
   );
 }
 
@@ -126,32 +164,32 @@ function UserMessage() {
   const { colors } = useTheme();
   return (
     <MessagePrimitive.Root style={styles.userContainer}>
-      <View style={[styles.bubble, { backgroundColor: colors.accent }]}>
+      <Animated.View
+        entering={FadeInDown.duration(ENTER_MS)}
+        style={[styles.bubble, { backgroundColor: colors.accent }]}
+      >
         <MessagePrimitive.Parts components={{ Text: UserText }} />
-      </View>
+      </Animated.View>
     </MessagePrimitive.Root>
   );
 }
 
-/** Left, in the light-grey pill. Pills and the number field sit under the bubble, not in it. */
+/** Left, in Hevy's grey fill. Session cards, pills and the number field sit under the bubble, not in it. */
+/** Left, in Hevy's grey fill: a bubble per text part, the typing bubble while the coach works, then cards and pills. */
 function AssistantMessage() {
   const { colors } = useTheme();
   return (
     <MessagePrimitive.Root style={styles.assistantContainer}>
       <ReviewCaption />
-      <View style={[styles.bubble, { backgroundColor: colors.muted }]}>
-        <MessagePrimitive.Parts components={{ Text: AssistantText, Empty: TypingIndicator }} />
-        <ErrorPrimitive.Root
-          style={[
-            styles.error,
-            { backgroundColor: colors.destructiveSurface, borderColor: colors.destructive },
-          ]}
-        >
-          <ErrorPrimitive.Message style={[styles.errorText, { color: colors.destructive }]} />
-        </ErrorPrimitive.Root>
-      </View>
+      <MessagePrimitive.Parts components={{ Text: AssistantText }} />
+      <TypingIndicator />
+      <ErrorPrimitive.Root
+        style={[styles.error, { backgroundColor: colors.destructiveSurface, borderColor: colors.destructive }]}
+      >
+        <ErrorPrimitive.Message style={[styles.errorText, { color: colors.destructive }]} />
+      </ErrorPrimitive.Root>
+      <PlanCards />
       <ChoicePills />
-      <BodyweightInput />
     </MessagePrimitive.Root>
   );
 }
@@ -168,6 +206,10 @@ const styles = StyleSheet.create({
   },
   assistantContainer: {
     alignItems: 'flex-start',
+    gap: 8,
+  },
+  wide: {
+    alignSelf: 'stretch',
   },
   bubble: {
     maxWidth: '85%',
@@ -180,17 +222,22 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     letterSpacing: -0.2,
   },
-  assistantText: ASSISTANT_TEXT,
   typing: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    paddingVertical: 8,
+    minHeight: 44,
   },
   dot: {
     width: 7,
     height: 7,
     borderRadius: 3.5,
+  },
+  status: {
+    fontSize: 15,
+    lineHeight: 20,
+    letterSpacing: -0.2,
+    marginLeft: 6,
   },
   error: {
     marginTop: 8,

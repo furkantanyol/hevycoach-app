@@ -119,6 +119,12 @@ describe('state', () => {
     await expect(loadState(path)).resolves.toEqual(emptyState());
   });
 
+  it('should drop an intake waiting on a step that no longer exists and keep the rest', async () => {
+    await writeOnDisk({ ...emptyState(), memory: MEMORY, intake: { step: 'start', answers: {} } });
+
+    await expect(loadState(path)).resolves.toMatchObject({ intake: null, memory: MEMORY });
+  });
+
   it('should read a message saved as a verdict as a review', async () => {
     await writeOnDisk({ ...emptyState(), messages: [verdictMessage] });
 

@@ -2,7 +2,9 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import type { IncomingHttpHeaders } from 'node:http';
 import Fastify, { type FastifyBaseLogger, type FastifyInstance, type FastifyReply, type FastifyServerOptions } from 'fastify';
 import { APPLY, deliveryOf, deviceToken, messageChoice, messageText, proposalChoice, TEXT_MAX_CHARACTERS } from './body.js';
-import { applyProposal, chatTurn, type CoachDeps, discardProposal, review } from './coach.js';
+import { eventsRoute } from './events.js';
+import { type CoachDeps, applyProposal, chatTurn, discardProposal, review } from './coach.js';
+import { progressChannel, type Reporter } from './progress.js';
 import { cardsView, RECENT_WORKOUTS } from './derived.js';
 import { recentWorkouts } from './hevy.js';
 import { ensureOpener, handleIntakeReply, intakeActive } from './intake.js';
@@ -27,7 +29,10 @@ const BEARER = 'Bearer ';
 const COACH_ERROR = '\n[coach error] ';
 const REVIEW_PUSH_TITLE = 'Review of your workout is ready';
 const PUSH_DATA = { url: '/' };
-const FIRST_DELIVERY = 'first hevy delivery';
+const DELIVERY = 'hevy delivery';
+const REJECTED_DELIVERY = 'hevy delivery rejected';
+/** Posted when the review fails after the workout was announced, so the app's wait under it ends. */
+const REVIEW_FAILED = 'I could not review that workout just now.';
 const TURN_COMPLETED = 'chat turn completed';
 const TURN_FAILED = 'chat turn failed';
 const REDACTED = '[redacted]';
@@ -35,7 +40,9 @@ const DEFAULT_LOG_LEVEL = 'info';
 
 const STREAM_HEADERS = {
   'content-type': 'text/plain; charset=utf-8',
-  'cache-control': 'no-cache',
+  // `no-transform` keeps Cloudflare from compressing the stream, which would hold chunks back in bursts.
+  'cache-control': 'no-cache, no-transform',
+  'x-accel-buffering': 'no',
   'transfer-encoding': 'chunked',
 };
 
@@ -111,11 +118,6 @@ async function rememberReply(deps: RouteDeps, text: string): Promise<void> {
   await deps.save();
 }
 
-function lastCoachText(state: State): string {
-  const last = state.messages.at(-1);
-  return last?.role === 'assistant' ? last.text : '';
-}
-
 function openStream(reply: FastifyReply): (chunk: string) => void {
   reply.hijack();
   reply.raw.writeHead(OK, STREAM_HEADERS);
@@ -143,14 +145,17 @@ async function streamTurn(deps: RouteDeps, reply: FastifyReply, text: string): P
   reply.raw.end();
 }
 
-/** The scripted branches write one finished message; the app reads the same text/plain stream. */
-async function streamMessage(reply: FastifyReply, produce: () => Promise<string>): Promise<void> {
+/** The scripted branches speak through the reporter — statuses while they work, words as they are written — on the same text/plain stream the chat turn uses. */
+async function streamMessage(reply: FastifyReply, run: (report: Reporter) => Promise<void>): Promise<void> {
   const write = openStream(reply);
+  const progress = progressChannel(write);
   try {
-    write(await produce());
+    await run({ status: progress.status, say: write });
   } catch (error) {
     write(`${COACH_ERROR}${describe(error)}`);
     reply.log.info(`${TURN_FAILED}: ${describe(error)}`);
+  } finally {
+    progress.stop();
   }
   reply.raw.end();
 }
@@ -171,6 +176,8 @@ async function notify(deps: RouteDeps, log: FastifyBaseLogger, workoutId: string
     log.info(sent.sent ? 'review push sent' : `review push failed: ${sent.error ?? 'unknown'}`);
   } catch (error) {
     log.error(`review failed for workout ${workoutId}: ${describe(error)}`);
+    deps.state.messages.push(newMessage('assistant', REVIEW_FAILED));
+    await deps.save();
   }
 }
 
@@ -195,18 +202,15 @@ function postMessage(deps: RouteDeps, reply: FastifyReply, text: string, choice:
   const answered = proposalChoice(deps.state, choice);
 
   if (answered) {
-    return streamMessage(reply, async () => {
+    return streamMessage(reply, async (report) => {
       await rememberReply(deps, text);
       const decided = answered === APPLY ? handlers.apply : handlers.discard;
-      return (await decided(deps.coach)).text;
+      report.say((await decided(deps.coach)).text);
     });
   }
 
   if (intakeActive(deps.state)) {
-    return streamMessage(reply, async () => {
-      await handlers.intakeReply(deps.coach, text, choice);
-      return lastCoachText(deps.state);
-    });
+    return streamMessage(reply, (report) => handlers.intakeReply(deps.coach, text, choice, report));
   }
 
   return streamTurn(deps, reply, text);
@@ -214,6 +218,7 @@ function postMessage(deps: RouteDeps, reply: FastifyReply, text: string, choice:
 
 function appRoutes(app: FastifyInstance, deps: RouteDeps): void {
   app.get(HEALTH_PATH, async () => ({ ok: true }));
+  eventsRoute(app, deps.state);
 
   app.get(MESSAGES_PATH, async () => {
     await handlersOf(deps).opener(deps.coach);
@@ -255,15 +260,14 @@ function webhookRoute(app: FastifyInstance, deps: RouteDeps): void {
       return reply.code(UNAUTHORIZED).send({ error: 'unauthorized' });
     }
 
-    // The delivery shape was never exercised against the live API, so log the first one in full,
-    // before validation, or a wrong guess is rejected without ever recording the real contract.
-    if (deps.state.seenEvents.length === 0) {
-      request.log.info({ headers: withoutSecrets(request.headers), body: request.body }, FIRST_DELIVERY);
-    }
+    // Every delivery is logged whole, before validation: the real contract has not been recorded yet
+    // (three live deliveries were rejected on 2026-09-11 with nothing kept), and the bodies are small.
+    request.log.info({ headers: withoutSecrets(request.headers), body: request.body }, DELIVERY);
 
     const delivery = deliveryOf(request.body);
     if (!delivery) {
-      return reply.code(BAD_REQUEST).send({ error: 'expected { id, payload: { workoutId } }' });
+      request.log.warn({ body: request.body }, REJECTED_DELIVERY);
+      return reply.code(BAD_REQUEST).send({ error: 'expected { workoutId }' });
     }
     if (deps.state.seenEvents.includes(delivery.id)) {
       return reply.code(OK).send({ recorded: false, notified: false });

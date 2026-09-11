@@ -19,7 +19,7 @@ pnpm ios:build && pnpm ios:install   # EAS local dev build, install with devicec
 - Expo SDK 57 / React Native 0.86 / New Architecture. Expo has changed: read https://docs.expo.dev/versions/v57.0.0/ for any Expo API before writing it.
 - TypeScript strict, no `any`. Files under 300 lines, functions under 50. Early returns, named constants.
 - The app stores nothing. State lives in `server/data/state.json`. If the app must persist something, AsyncStorage only.
-- Every Hevy call goes through `@furkantanyol/hevy-client`. Never call the API by hand.
+- Every Hevy call goes through `hevy-sdk`. Never call the API by hand.
 - The model produces the numbers; `server/src/guard.ts` bounds them before anything is written to Hevy. `create_program` is the only tool that writes.
 - Routines are written for real into the "HevyCoach" folder of the owner's account. Never touch other folders or existing routines.
 - Load the `claude-api` skill before writing or changing any Anthropic call.

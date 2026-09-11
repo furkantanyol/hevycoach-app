@@ -1,11 +1,14 @@
 import type Anthropic from '@anthropic-ai/sdk';
-import { contextBlock, CREATE_PROGRAM_TOOL, PLAN_OUTPUT_SCHEMA, SYSTEM_PROMPT, untrusted } from './prompt.js';
+import { CREATE_PROGRAM_TOOL, PLAN_OUTPUT_SCHEMA } from './plan-prompt.js';
+import { contextBlock, SYSTEM_PROMPT, untrusted } from './prompt.js';
 import { REVIEW_OUTPUT_SCHEMA } from './review-prompt.js';
 import type { Message, State } from './state.js';
 
 export const CONTEXT_MESSAGES = 30;
 
 const PLAN_MAX_TOKENS = 16_000;
+/** Three to five short lines: the read streams within seconds and is over before the block call starts. */
+const READ_MAX_TOKENS = 400;
 const CHAT_MAX_TOKENS = 64_000;
 const REVIEW_MAX_TOKENS = 4_000;
 
@@ -73,6 +76,18 @@ export function planRequest(state: State, model: string, task: string): Anthropi
     model,
     max_tokens: PLAN_MAX_TOKENS,
     output_config: { effort: 'high', format: { type: 'json_schema', schema: PLAN_OUTPUT_SCHEMA } },
+    system: systemBlocks(state),
+    messages: taskMessages(state, task),
+  };
+}
+
+/** The coach's read of the athlete, streamed as plain text ahead of the block; no tools, no thinking, so the first word comes fast. */
+export function readRequest(state: State, model: string, task: string): Anthropic.MessageStreamParams {
+  return {
+    model,
+    max_tokens: READ_MAX_TOKENS,
+    // Low: the read formats numbers the history already holds, and its first word is the wait the athlete feels.
+    output_config: { effort: 'low' },
     system: systemBlocks(state),
     messages: taskMessages(state, task),
   };

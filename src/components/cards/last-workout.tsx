@@ -1,22 +1,28 @@
 /**
- * Card two: the last session Hevy logged — its name, how long ago it was, and
- * its top four lifts by volume as the server ordered them.
+ * Card two: the last session Hevy logged — its name, how long ago it was, its
+ * volume, and its lifts heaviest first: four on the card, every one of them
+ * once the card is expanded.
  */
+import { Fragment } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
-import { CardCaption, SKELETON } from './card-text';
+import { CardCaption, CardHeader, RowDivider, SKELETON } from './card-text';
+import { formatWeight, grouped, joinDetails } from './format';
 import { useTheme } from '../assistant-ui/theme';
-import type { CardsView } from '../../lib/types';
+import type { CardsView, Lift } from '../../lib/types';
 
 const MAX_LIFTS = 4;
+const LABEL = 'Last workout';
 const EMPTY = 'No workouts yet';
 const MS_PER_MINUTE = 60_000;
 const MINUTES_PER_HOUR = 60;
 const HOURS_PER_DAY = 24;
 const DAYS_PER_WEEK = 7;
 
-type LastWorkout = NonNullable<CardsView['lastWorkout']>;
-type Lift = LastWorkout['lifts'][number];
+interface LastWorkoutCardProps {
+  readonly view: CardsView | null;
+  readonly expanded?: boolean;
+}
 
 /** Plain words, no Intl: the caption never needs more than weeks. */
 function relativeTime(at: string, now: number = Date.now()): string {
@@ -37,59 +43,88 @@ function relativeTime(at: string, now: number = Date.now()): string {
   return weeks === 1 ? 'Last week' : `${weeks} weeks ago`;
 }
 
-/** Thousands separators without Intl, so the volume reads "1,800 kg". */
-function grouped(kg: number): string {
-  return Math.round(kg)
-    .toString()
-    .replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-}
+const totalVolume = (lifts: readonly Lift[]): number =>
+  lifts.reduce((sum, lift) => sum + lift.volumeKg, 0);
 
-function formatWeight(kg: number): string {
-  return Number.isInteger(kg) ? `${kg}` : kg.toFixed(1);
-}
+/** "4 × 10 · 60 kg": sets, reps and the top weight, all a card row has room for. */
+const compactLine = (lift: Lift): string =>
+  `${lift.sets} × ${lift.reps} · ${formatWeight(lift.weightKg)} kg`;
 
-function liftLine(lift: Lift): string {
-  return `${lift.sets} × ${lift.reps} × ${formatWeight(lift.weightKg)} kg · ${grouped(lift.volumeKg)} kg`;
-}
+/** "4 × 10 × 60 kg": the working sets in full, with the volume on its own line under it. */
+const fullLine = (lift: Lift): string =>
+  `${lift.sets} × ${lift.reps} × ${formatWeight(lift.weightKg)} kg`;
 
-function LiftRow({ lift }: { readonly lift: Lift }) {
+function LiftRow({ lift, expanded }: { readonly lift: Lift; readonly expanded: boolean }) {
   const { colors } = useTheme();
 
   return (
-    <View style={styles.row}>
-      <Text style={[styles.liftTitle, { color: colors.foreground }]} numberOfLines={1}>
+    <View style={[styles.row, expanded && styles.rowExpanded]}>
+      <Text
+        style={[styles.liftTitle, { color: colors.foreground }]}
+        numberOfLines={expanded ? 2 : 1}
+      >
         {lift.title}
       </Text>
-      <Text style={[styles.liftValue, { color: colors.mutedForeground }]} numberOfLines={1}>
-        {liftLine(lift)}
-      </Text>
+      <View style={styles.figures}>
+        <Text
+          style={[styles.liftValue, { color: expanded ? colors.foreground : colors.mutedForeground }]}
+          numberOfLines={1}
+        >
+          {expanded ? fullLine(lift) : compactLine(lift)}
+        </Text>
+        {expanded && (
+          <Text style={[styles.liftVolume, { color: colors.mutedForeground }]}>
+            {`${grouped(lift.volumeKg)} kg`}
+          </Text>
+        )}
+      </View>
     </View>
   );
 }
 
-export function LastWorkoutCard({ view }: { readonly view: CardsView | null }) {
+export function LastWorkoutCard({ view, expanded = false }: LastWorkoutCardProps) {
   const { colors } = useTheme();
   const workout = view === null ? null : view.lastWorkout;
 
   if (workout === null) {
     return (
-      <Text style={[styles.title, { color: colors.foreground }]} numberOfLines={1}>
-        {view === null ? SKELETON : EMPTY}
-      </Text>
+      <View>
+        <CardHeader label={LABEL} chevron={false} />
+        <Text style={[styles.title, { color: colors.foreground }]} numberOfLines={1}>
+          {view === null ? SKELETON : EMPTY}
+        </Text>
+      </View>
     );
   }
 
+  const lifts = expanded ? workout.lifts : workout.lifts.slice(0, MAX_LIFTS);
+  const hidden = workout.lifts.length - lifts.length;
+
   return (
     <View style={styles.card}>
-      <Text style={[styles.title, { color: colors.foreground }]} numberOfLines={1}>
+      <CardHeader label={LABEL} chevron={!expanded} />
+      <Text
+        style={[styles.title, { color: colors.foreground }]}
+        numberOfLines={expanded ? 2 : 1}
+      >
         {workout.title}
       </Text>
-      <CardCaption>{relativeTime(workout.at)}</CardCaption>
+      <CardCaption>
+        {joinDetails(relativeTime(workout.at), `${grouped(totalVolume(workout.lifts))} kg`)}
+      </CardCaption>
       <View style={styles.rows}>
-        {workout.lifts.slice(0, MAX_LIFTS).map((lift) => (
-          <LiftRow key={lift.title} lift={lift} />
+        {lifts.map((lift, index) => (
+          <Fragment key={lift.title}>
+            {expanded && index > 0 && <RowDivider />}
+            <LiftRow lift={lift} expanded={expanded} />
+          </Fragment>
         ))}
       </View>
+      {hidden > 0 && (
+        <View style={styles.more}>
+          <CardCaption>{`+${hidden} more`}</CardCaption>
+        </View>
+      )}
     </View>
   );
 }
@@ -97,14 +132,14 @@ export function LastWorkoutCard({ view }: { readonly view: CardsView | null }) {
 const styles = StyleSheet.create({
   card: {
     flex: 1,
-    gap: 2,
   },
   title: {
-    fontSize: 17,
+    fontSize: 20,
     fontWeight: '600',
+    letterSpacing: -0.2,
   },
   rows: {
-    paddingTop: 10,
+    paddingTop: 12,
     gap: 6,
   },
   row: {
@@ -113,12 +148,26 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 12,
   },
+  rowExpanded: {
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
   liftTitle: {
     flexShrink: 1,
     fontSize: 15,
   },
+  figures: {
+    alignItems: 'flex-end',
+  },
   liftValue: {
     fontSize: 15,
     fontVariant: ['tabular-nums'],
+  },
+  liftVolume: {
+    fontSize: 13,
+    fontVariant: ['tabular-nums'],
+  },
+  more: {
+    paddingTop: 6,
   },
 });

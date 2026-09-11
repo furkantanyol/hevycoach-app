@@ -1,6 +1,7 @@
-import { createHevyClient, type Workout, type WorkoutExercise, type WorkoutSet } from '@furkantanyol/hevy-client';
+import { createHevyClient, type Workout, type WorkoutExercise, type WorkoutSet } from 'hevy-sdk';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { type ExerciseHistory, findSession, formatCatalogue, formatHistory, formatWorkout, type HistorySummary, historySummary, PER_GROUP, ROUTINE_FOLDER, templateCatalogue, TOP_EXERCISES, writeRoutines } from './hevy.js';
+import { currentRoutines, formatRoutines } from './routines.js';
 import type { Block, Session } from './state.js';
 
 const NOW = '2026-09-10T12:00:00.000Z';
@@ -26,7 +27,8 @@ function harness(routes: Record<string, Route>) {
     calls.push(call);
     const route = Object.entries(table).find(([path]) => call.path === path || call.path.startsWith(`${path}/`))?.[1];
     if (!route) return new Response('not found', { status: NOT_FOUND });
-    return new Response(JSON.stringify(route(call)), { status: OK });
+    const answer = route(call);
+    return answer instanceof Response ? answer : new Response(JSON.stringify(answer), { status: OK });
   };
   return { calls, client: createHevyClient({ apiKey: 'test', fetch: fetchImpl, retries: 0 }) };
 }
@@ -238,7 +240,7 @@ describe('writeRoutines', () => {
     ]);
   });
 
-  it('should reuse the existing HevyCoach folder', async () => {
+  it('should reuse the existing Coach folder', async () => {
     const { client, calls } = harness(routineRoutes([folder(42)]));
 
     await writeRoutines(client, blockOf([session('Lower A', null)]));
@@ -252,7 +254,7 @@ describe('writeRoutines', () => {
     await writeRoutines(client, blockOf([session('Lower A', 'r-1')]));
 
     expect(writes(calls)).toEqual([
-      { method: 'PUT', path: '/v1/routines/r-1', body: { routine: { title: 'Lower A', exercises: [ROUTINE_EXERCISE] } } },
+      { method: 'PUT', path: '/v1/routines/r-1', body: { routine: { title: 'Lower A', folder_id: 42, exercises: [ROUTINE_EXERCISE] } } },
     ]);
   });
 
@@ -262,6 +264,78 @@ describe('writeRoutines', () => {
     const written = await writeRoutines(client, blockOf([session('Lower A', null), session('Upper B', 'r-1')]));
 
     expect(written.sessions.map((entry) => entry.hevyRoutineId)).toEqual(['r-new-1', 'r-1']);
+  });
+});
+
+const routineOf = (id: string, title: string, sets: { type: string; weight_kg: number; reps: number }[]) => ({
+  id,
+  title,
+  folder_id: null,
+  updated_at: NOW,
+  created_at: NOW,
+  exercises: [{ index: 0, title: 'Squat (Barbell)', notes: '', exercise_template_id: 'SQ', superset_id: null, sets }],
+});
+
+describe('currentRoutines', () => {
+  const routines: Record<string, unknown> = {
+    'r-a': routineOf('r-a', 'Lower A', [{ type: 'normal', weight_kg: 100, reps: 5 }]),
+    'r-b': routineOf('r-b', 'Upper A', [{ type: 'normal', weight_kg: 60, reps: 8 }]),
+  };
+  const byId: Route = (call) => {
+    const routine = routines[call.path.split('/').at(-1) ?? ''];
+    if (!routine) throw new Error('unknown routine');
+    return { routine };
+  };
+  const logged = (startTime: string, routineId: string | null) => workout(startTime, [], { routine_id: routineId });
+
+  it('should fetch each routine behind the recent workouts once, newest first', async () => {
+    const { client, calls } = harness({ '/v1/routines': byId });
+    const recent = [logged('2026-09-09T10:00:00Z', 'r-b'), logged('2026-09-07T10:00:00Z', 'r-a'), logged('2026-09-05T10:00:00Z', 'r-b')];
+
+    const found = await currentRoutines(client, recent);
+
+    expect([found.map((routine) => routine.id), calls.length]).toEqual([['r-b', 'r-a'], 2]);
+  });
+
+  it('should skip workouts logged without a routine', async () => {
+    const { client } = harness({ '/v1/routines': byId });
+
+    const found = await currentRoutines(client, [logged('2026-09-09T10:00:00Z', null)]);
+
+    expect(found).toEqual([]);
+  });
+
+  it('should leave out a routine Hevy no longer returns', async () => {
+    const { client } = harness({ '/v1/routines/r-a': () => ({ routine: routines['r-a'] }) });
+    const recent = [logged('2026-09-09T10:00:00Z', 'r-gone'), logged('2026-09-07T10:00:00Z', 'r-a')];
+
+    const found = await currentRoutines(client, recent);
+
+    expect(found.map((routine) => routine.id)).toEqual(['r-a']);
+  });
+
+  it('should fail rather than continue from a partial list when Hevy errors', async () => {
+    const { client } = harness({ '/v1/routines': byId });
+
+    await expect(currentRoutines(client, [logged('2026-09-09T10:00:00Z', 'r-broken')])).rejects.toThrow();
+  });
+});
+
+describe('formatRoutines', () => {
+  it('should print each routine with its working sets as reps x kg and leave warm-ups out', async () => {
+    const routine = routineOf('r-a', 'Lower A', [
+      { type: 'warmup', weight_kg: 40, reps: 10 },
+      { type: 'normal', weight_kg: 100, reps: 5 },
+      { type: 'normal', weight_kg: 100, reps: 5 },
+    ]);
+    const { client } = harness({ '/v1/routines': () => ({ routine }) });
+    const current = await currentRoutines(client, [workout('2026-09-09T10:00:00Z', [], { routine_id: 'r-a' })]);
+
+    expect(formatRoutines(current)).toBe('Lower A [r-a]\n- Squat (Barbell) [SQ]: 5x100kg, 5x100kg');
+  });
+
+  it('should be empty when there is nothing to continue', () => {
+    expect(formatRoutines([])).toBe('');
   });
 });
 
@@ -294,5 +368,34 @@ describe('formatWorkout', () => {
     const done = workout('2026-09-07T16:32:48+00:00', [squat([set(85, 7, { rpe: 8.5 }), set(85, 6)])], { title: '2 Lower A' });
 
     expect(formatWorkout(done)).toBe('2026-09-07 2 Lower A\nSquat (Barbell): 85kg x 7 @8.5, 85kg x 6');
+  });
+});
+
+describe('writeRoutines, when the write response carries no id', () => {
+  it('should take the routine id from the folder, by title', async () => {
+    const { client } = harness({
+      '/v1/routine_folders': () => listed('routine_folders', [folder(FOLDER_ID)]),
+      '/v1/routines': (call) => (call.method === 'POST' ? { routine: {} } : listed('routines', [{ id: 'r-found', title: 'Lower A', folder_id: FOLDER_ID }])),
+    });
+
+    const block = await writeRoutines(client, blockOf([session('Lower A', null)]));
+
+    expect(block.sessions[0].hevyRoutineId).toBe('r-found');
+  });
+});
+
+describe('writeRoutines, when a tracked routine is gone from Hevy', () => {
+  it('should write it anew instead of failing the block', async () => {
+    const { client, calls } = harness({
+      '/v1/routine_folders': () => listed('routine_folders', [folder(FOLDER_ID)]),
+      '/v1/routines': (call) => (call.method === 'PUT' ? new Response('gone', { status: NOT_FOUND }) : { routine: { id: 'r-new' } }),
+    });
+
+    const block = await writeRoutines(client, blockOf([session('Lower A', 'r-gone')]));
+
+    expect([writes(calls).map((call) => `${call.method} ${call.path}`), block.sessions[0].hevyRoutineId]).toEqual([
+      ['PUT /v1/routines/r-gone', 'POST /v1/routines'],
+      'r-new',
+    ]);
   });
 });

@@ -5,17 +5,9 @@
  * src/lib/reload.ts and the thread remounts on the new key with the server's
  * history.
  *
- * The header is transparent (`headerTransparent`, expo-router's
- * NativeStackNavigationOptions): it hands the native bar a transparent
- * background and an absolute position, so the screen's wash runs behind the
- * title unbroken instead of stopping at a white band. `headerBlurEffect` is
- * deliberately left unset — it would paint a material back over the wash, the
- * band this removes, and react-native-screens warns it can also overlap iOS 26
- * scroll edge effects. The transparent bar drops its own hairline with it
- * (`headerShadowVisible` defaults to hidden once the header is transparent).
- *
- * Because the bar now floats, the screen is laid out from the top of the
- * display and insets itself by the bar's height (src/app/index.tsx).
+ * No native header: the screen draws Hevy's own title — a large "Coach" flush
+ * under the status bar (src/app/index.tsx) — the way "Workout" sits on Hevy's
+ * screen, without the empty row a native large-title bar puts above it.
  */
 import * as Notifications from 'expo-notifications';
 import { Stack } from 'expo-router';
@@ -23,8 +15,6 @@ import { useEffect } from 'react';
 
 import { bumpReload } from '../lib/reload';
 import { registerForPush } from '../push';
-
-const SCREEN_TITLE = 'Coach';
 
 /**
  * Clearing the stored response keeps the same tap from being replayed on the
@@ -57,14 +47,7 @@ export default function RootLayout() {
 
   return (
     <Stack>
-      <Stack.Screen
-        name="index"
-        options={{
-          title: SCREEN_TITLE,
-          headerLargeTitleEnabled: false,
-          headerTransparent: true,
-        }}
-      />
+      <Stack.Screen name="index" options={{ headerShown: false }} />
     </Stack>
   );
 }

@@ -1,6 +1,7 @@
-import { AuiIf, ComposerPrimitive, useAuiState } from '@assistant-ui/react-native';
-import { StyleSheet, Text, View } from 'react-native';
+import { AuiIf, ComposerPrimitive, useAui, useAuiState } from '@assistant-ui/react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { setSelection, useSelection } from '../../lib/selection';
 import { Radius, Spacing, useTheme } from './theme';
 
 /** iOS minimum touch target, and the diameter of the round send button. */
@@ -8,13 +9,36 @@ const ACTION_SIZE = 44;
 const SEND_GLYPH = '↑';
 const MAX_MESSAGE_LENGTH = 4000;
 
+/**
+ * The one way to send. While the field shows exactly the pills picked on a multi-select question,
+ * the arrow posts them with their values attached, the way a single pill posts its value; anything
+ * else in the field is a typed answer and goes the composer's own way.
+ */
 function SendButton() {
   const { colors } = useTheme();
+  const aui = useAui();
   const canSend = useAuiState((s) => s.composer.canSend);
+  const text = useAuiState((s) => s.composer.text);
+  const selection = useSelection();
+  const picks = selection !== null && selection.text === text ? selection : null;
+
+  const send = () => {
+    if (picks === null) {
+      aui.composer.send();
+      return;
+    }
+    aui.thread.append({ role: 'user', content: [{ type: 'text', text: picks.text }], metadata: { custom: { choice: picks.values } } });
+    aui.composer.setText('');
+    setSelection(null);
+  };
 
   return (
-    <ComposerPrimitive.Send
+    <Pressable
+      accessibilityRole="button"
       accessibilityLabel="Send message"
+      accessibilityState={{ disabled: !canSend }}
+      disabled={!canSend}
+      onPress={send}
       style={[styles.actionButton, { backgroundColor: canSend ? colors.accent : colors.border }]}
     >
       <Text
@@ -25,7 +49,7 @@ function SendButton() {
       >
         {SEND_GLYPH}
       </Text>
-    </ComposerPrimitive.Send>
+    </Pressable>
   );
 }
 
@@ -46,9 +70,7 @@ export function Composer() {
 
   return (
     <View style={styles.container}>
-      <View
-        style={[styles.shell, { backgroundColor: colors.composer, borderColor: colors.border }]}
-      >
+      <View style={[styles.shell, { backgroundColor: colors.muted }]}>
         <ComposerPrimitive.Input
           style={[styles.input, { color: colors.foreground }]}
           placeholder="Message…"
@@ -81,7 +103,6 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     gap: 6,
     borderRadius: Radius.composer,
-    borderWidth: StyleSheet.hairlineWidth,
     padding: 6,
   },
   input: {

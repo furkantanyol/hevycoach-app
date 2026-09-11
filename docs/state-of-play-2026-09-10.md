@@ -2,7 +2,7 @@
 
 ## hevy-coach (~/Projects/hevy-coach) — both packages at 1.0.0 on npm, CI green
 - Spec: docs/api/hevy-openapi.2026-09-09.json = 14 paths, 22 operations (GET 14, POST 5, PUT 3, DELETE 0). No operationIds in the spec.
-- @furkantanyol/hevy-client: 22/22 operations covered (verified twice, 0 disagreements). Plus webhook.get/set/delete on the undocumented /v1/webhook-subscription (ADR 0004). "fetch-only" = uses the fetch API, no axios (ADR 0003). Zero runtime deps.
+- hevy-sdk: 22/22 operations covered (verified twice, 0 disagreements). Plus webhook.get/set/delete on the undocumented /v1/webhook-subscription (ADR 0004). "fetch-only" = uses the fetch API, no axios (ADR 0003). Zero runtime deps.
 - hevy-coach MCP: 26 tools = 21 one-to-one (log-body-measurement covers POST+PUT via upsert) + 5 coaching (analyze-workout, get-training-summary, get-exercise-progression, find-exercise, batch-find-exercises). 22/22 spec operations covered. No webhook tools by decision (ADR 0004: "letting an LLM repoint someone's webhook has no coaching value").
 - pnpm validate: FAILS. Cause: untracked supabase/.temp/linked-project.json (a `supabase link` run in the wrong dir; same project ref as the app) trips biome format:check. Fix = delete the stray dir.
 - prompts/COACH.md persona holds the concrete progression spec: MEV/MAV/MRV landmarks per muscle; +2.5 kg compound per successful session; isolation +1-2 kg or +1-2 reps; hold after 2 missed sessions; RPE 7-8 hypertrophy / 8-9 strength / 5-6 deload; DUP default; mesocycle 4-6 wk then deload (volume -40-50%); 9 adaptation rules (COACH.md:271-279). Onboarding protocol COACH.md:185-205. Memory is inline in the prompt (no tool).

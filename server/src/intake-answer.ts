@@ -1,7 +1,7 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import type { CoachDeps } from './coach.js';
 import { enumField, SYSTEM_PROMPT, untrusted } from './prompt.js';
-import { EQUIPMENT, GOALS, INJURIES, INTAKE_PATHS, YEARS_TRAINING, type Goal, type Injury, type IntakePath, type IntakeStep, type Profile } from './state.js';
+import { EQUIPMENT, GOALS, INJURIES, YEARS_TRAINING, type Goal, type Injury, type IntakePath, type IntakeStep, type Profile } from './state.js';
 
 export const DAYS_PER_WEEK = [2, 3, 4, 5, 6];
 export const BODYWEIGHT_KG = { min: 30, max: 250 } as const;
@@ -9,15 +9,22 @@ export const BODYWEIGHT_KG = { min: 30, max: 250 } as const;
 export const NOTHING = 'nothing';
 export const YES = 'yes';
 export const CHANGED = 'changed';
-/** Tapped to close a multi-answer loop: everything already chosen stands and the script moves on. */
-export const DONE = 'done';
 
-/** One answered profile field, the held bodyweight changing, the end of a loop, or the branch they chose. */
-export type Answer = Partial<Profile> | typeof CHANGED | typeof DONE | { path: IntakePath };
+/** The two answers to the journey question, by path: a fresh block, or one built on the routines they run. */
+export const JOURNEYS = ['existing', 'continue'] as const satisfies readonly IntakePath[];
+
+/** One answered profile field, the held bodyweight changing, the end of a loop, or the journey they chose. */
+export type Answer = Partial<Profile> | typeof CHANGED | { path: IntakePath };
+
+/** The journey answer is the one that sets no profile field, so it travels as its own shape. */
+export const isPath = (answer: Answer): answer is { path: IntakePath } => typeof answer !== 'string' && 'path' in answer;
+
+/** Every step but the closing note is read by the model; the note is kept as typed. */
+export type InterpretedStep = Exclude<IntakeStep, 'notes'>;
 
 /** The step a typed reply is answering, and the bodyweight Hevy holds when that step confirms it. */
 export interface AnsweredStep {
-  step: IntakeStep;
+  step: InterpretedStep;
   heldBodyweightKg: number | null;
 }
 
@@ -32,9 +39,6 @@ const strings = (value: unknown): string[] =>
 
 const isGoal = (value: string): value is Goal => GOALS.some((goal) => goal === value);
 const isInjury = (value: string): value is Injury => INJURIES.some((injury) => injury === value);
-
-/** The branch answer is the one that sets no profile field, so it travels as its own shape. */
-export const isPath = (answer: Answer): answer is { path: IntakePath } => typeof answer !== 'string' && 'path' in answer;
 
 function chosenOption<T extends string>(options: readonly T[], value: unknown): T | null {
   const chosen = single(value);
@@ -63,8 +67,8 @@ function bodyweightAnswer(value: unknown): Answer | null {
   return bodyweightKg >= BODYWEIGHT_KG.min && bodyweightKg <= BODYWEIGHT_KG.max ? { bodyweightKg } : null;
 }
 
-function pathAnswer(value: unknown): Answer | null {
-  const path = chosenOption(INTAKE_PATHS, value);
+function journeyAnswer(value: unknown): Answer | null {
+  const path = chosenOption(JOURNEYS, value);
   return path ? { path } : null;
 }
 
@@ -78,8 +82,11 @@ function equipmentAnswer(value: unknown): Answer | null {
   return equipment ? { equipment } : null;
 }
 
+/** The closing question's one pill; a typed note never comes through here. */
+const notesAnswer = (value: unknown): Answer | null => (single(value) === NOTHING ? {} : null);
+
 const ANSWER_OF: Record<IntakeStep, (value: unknown) => Answer | null> = {
-  start: pathAnswer,
+  journey: journeyAnswer,
   yearsTraining: yearsAnswer,
   daysPerWeek: daysAnswer,
   equipment: equipmentAnswer,
@@ -87,6 +94,7 @@ const ANSWER_OF: Record<IntakeStep, (value: unknown) => Answer | null> = {
   injuries: injuriesAnswer,
   bodyweight: bodyweightAnswer,
   bodyweightValue: bodyweightAnswer,
+  notes: notesAnswer,
 };
 
 /** Null when the value is not an answer to this step: the coach re-asks rather than guessing. */
@@ -96,11 +104,11 @@ export function answerOf(step: IntakeStep, value: unknown): Answer | null {
 
 const KILOGRAMS = `a number of kilograms between ${BODYWEIGHT_KG.min} and ${BODYWEIGHT_KG.max}`;
 
-const ASKED: Record<IntakeStep, { task: string; values: string; field: Record<string, unknown> }> = {
-  start: {
-    task: 'whether they are new to Hevy or have been logging workouts in it for a while',
-    values: `${INTAKE_PATHS.join(', ')}: new when they have little or no history, existing when they have been logging`,
-    field: enumField(INTAKE_PATHS, 'new when Hevy is new to them, existing when they have been logging'),
+const ASKED: Record<InterpretedStep, { task: string; values: string; field: Record<string, unknown> }> = {
+  journey: {
+    task: 'whether they want to start a new training journey or continue the one they are on',
+    values: `${JOURNEYS.join(', ')}: existing for a fresh start, continue to build on the routines they run now`,
+    field: enumField(JOURNEYS, 'existing for a fresh start, continue to build on what they run now'),
   },
   yearsTraining: {
     task: 'how long they have been training',
@@ -119,7 +127,7 @@ const ASKED: Record<IntakeStep, { task: string; values: string; field: Record<st
   },
   goals: {
     task: 'what they are training for',
-    values: `${GOALS.join(', ')}, or an empty list when they are naming no more goals`,
+    values: `${GOALS.join(', ')}, or an empty list when they name none`,
     field: { type: 'array', description: 'every goal they named, empty when they name none', items: { type: 'string', enum: [...GOALS] } },
   },
   injuries: {
@@ -141,7 +149,7 @@ const ASKED: Record<IntakeStep, { task: string; values: string; field: Record<st
 
 // No minimum or maximum: the messages API rejects those keywords (docs/research/claude-api-shapes.md),
 // so the range lives in the description and `answerOf` enforces it after parsing.
-function replySchema(step: IntakeStep): Record<string, unknown> {
+function replySchema(step: InterpretedStep): Record<string, unknown> {
   return {
     type: 'object',
     properties: {
@@ -177,9 +185,6 @@ function textOf(message: Anthropic.Message): string {
     .join('');
 }
 
-/** The way out of the goals loop in words: the reply answers the question and names no goal to add. */
-const leavesGoals = (step: IntakeStep, field: unknown): boolean => step === 'goals' && Array.isArray(field) && field.length === 0;
-
 /** One small call: a typed reply is mapped onto the step the script is waiting on, or reported unclear. */
 export async function interpret(deps: CoachDeps, asked: AnsweredStep, text: string): Promise<Answer | null> {
   const { step } = asked;
@@ -192,6 +197,5 @@ export async function interpret(deps: CoachDeps, asked: AnsweredStep, text: stri
   });
   const parsed = JSON.parse(textOf(message)) as { field: unknown; unclear: boolean };
   if (parsed.unclear) return null;
-  if (leavesGoals(step, parsed.field)) return DONE;
   return answerOf(step, parsed.field);
 }

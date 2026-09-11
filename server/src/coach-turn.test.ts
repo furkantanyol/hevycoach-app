@@ -1,7 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { createHevyClient } from '@furkantanyol/hevy-client';
+import { createHevyClient } from 'hevy-sdk';
 import { describe, expect, it, vi } from 'vitest';
 import { chatTurn, type CoachDeps } from './coach.js';
+import { STATUS_MARK } from './progress.js';
 import { emptyState, type Block, type PendingProposal, type Profile, type State } from './state.js';
 
 const OK = 200;
@@ -22,13 +23,18 @@ const AGREED_TEXT = 'yes, do it';
 const PARTIAL_TEXT = 'Squat day it is.';
 const PLAN_REPLY = 'Your block is in Hevy.';
 const ANALYSIS = 'Squat has stalled. Load comes down, volume stays.';
+const READ = 'Twelve sessions, squat 100 for five. The squat is the lift to move.';
 const CLOSING_REPLY = 'Done.';
 const APPLIED_TEXT = `Updated ${SESSION_NAME} in Hevy.`;
 const KEPT_TEXT = 'Kept as is.';
-const HEARTBEAT = '.';
 const SLOW_PLAN_MS = 40_000;
-/** 40 s of plan call spans the 15 s and the 30 s tick of the keep-alive. */
-const DOTS_IN_A_SLOW_PLAN = 2;
+/** The status the plan call runs under, as the stream carries it. */
+const WRITING_STATUS = `${STATUS_MARK}Writing your block\n`;
+/** What the app shows of a stream: every status line dropped, the rest joined. */
+const STATUS_LINES = new RegExp(`${STATUS_MARK}[^\\n]*\\n`, 'g');
+const visible = (chunks: string[]): string => chunks.join('').replace(STATUS_LINES, '');
+/** Written once when the call starts, then again at the 15 s and the 30 s tick of the keep-alive. */
+const WRITING_LINES_IN_A_SLOW_PLAN = 3;
 
 const PROFILE: Profile = {
   goals: ['strength', 'muscle'],
@@ -67,10 +73,10 @@ const PLAN_JSON = JSON.stringify({
 
 const SESSION_NAMES = `${SESSION_NAME}, ${SECOND_SESSION_NAME}`;
 const SESSION_COUNT = 2;
-/** What the athlete reads the moment the block lands: the model's analysis, closed by the line naming the routines. */
-const POSTED_ANALYSIS = `${ANALYSIS}\n\nOpen Hevy → Routines → HevyCoach: ${SESSION_NAMES}`;
+/** What the athlete reads while the block is written: the read as it streams, then the lines for the week. */
+const POSTED_ANALYSIS = `${READ}\n\n${ANALYSIS}`;
 const SAVED_PLAN_TEXT = `\n\n${POSTED_ANALYSIS}\n\n${PLAN_REPLY}`;
-const CONFIRMATION = `Block written to Hevy: ${BLOCK.name}, ${SESSION_COUNT} sessions — ${SESSION_NAMES}. The analysis has already been shown to the athlete; add at most two short lines: what to do first and one question. Do not repeat the analysis.`;
+const CONFIRMATION = `Block written to Hevy: ${BLOCK.name}, ${SESSION_COUNT} sessions — ${SESSION_NAMES}. Your read and the lines for this week have already been shown to the athlete; add at most two short lines: what to do first and one question. Do not repeat them.`;
 
 /** One streamed assistant turn: plain text (optionally cut short by an API error), or a single tool call. */
 type Streamed = { text: string; fail?: true } | { tool: string; input: object };
@@ -154,7 +160,7 @@ function hevyStub() {
       '/v1/exercise_templates',
       () => listed('exercise_templates', [{ id: TEMPLATE_ID, title: TEMPLATE_TITLE, type: 'weight_reps', primary_muscle_group: 'quadriceps', secondary_muscle_groups: [], equipment: 'barbell', is_custom: false }]),
     ],
-    ['/v1/routine_folders', (method) => (method === 'POST' ? { id: FOLDER_ID, index: 0, title: 'HevyCoach', updated_at: '', created_at: '' } : listed('routine_folders', []))],
+    ['/v1/routine_folders', (method) => (method === 'POST' ? { id: FOLDER_ID, index: 0, title: 'Coach', updated_at: '', created_at: '' } : listed('routine_folders', []))],
     ['/v1/routines', () => ({ routine: { id: NEW_ROUTINE_ID } })],
   ];
 
@@ -185,7 +191,7 @@ function harness(streamed: Streamed[] = [], plain: Plain[] = [], seed: Partial<S
   return { deps, state, saved, sent: anthropic.sent };
 }
 
-const planTurn = (): Streamed[] => [{ tool: 'create_program', input: { profile: PROFILE, reason: 'intake answered' } }, { text: PLAN_REPLY }];
+const planTurn = (): Streamed[] => [{ tool: 'create_program', input: { profile: PROFILE, reason: 'intake answered' } }, { text: READ }, { text: PLAN_REPLY }];
 
 const pending = (): Partial<State> => ({ block: structuredClone(BLOCK), pendingProposal: PENDING });
 
@@ -220,7 +226,7 @@ describe('chatTurn', () => {
 
     await chatTurn(deps, USER_TEXT, (chunk) => chunks.push(chunk));
 
-    expect(chunks.join('')).toContain(`\n\n${POSTED_ANALYSIS}\n\n${PLAN_REPLY}`);
+    expect(visible(chunks)).toContain(`\n\n${POSTED_ANALYSIS}\n\n${PLAN_REPLY}`);
   });
 
   it('should keep the analysis in the saved plan message', async () => {
@@ -236,7 +242,7 @@ describe('chatTurn', () => {
 
     await chatTurn(deps, USER_TEXT, () => {});
 
-    expect(sent[2].messages.at(-1)).toEqual({
+    expect(sent[3].messages.at(-1)).toEqual({
       role: 'user',
       content: [{ type: 'tool_result', tool_use_id: 'toolu_1', content: CONFIRMATION }],
     });
@@ -250,7 +256,7 @@ describe('chatTurn', () => {
     expect(saved.at(-1)).toEqual([USER_TEXT, PARTIAL_TEXT]);
   });
 
-  it('should keep the stream alive with a dot every keep-alive interval while the plan runs', async () => {
+  it('should repeat the last status line every keep-alive interval while the plan runs', async () => {
     const { deps } = harness(planTurn(), [{ text: PLAN_JSON, afterMs: SLOW_PLAN_MS }]);
     const chunks: string[] = [];
     vi.useFakeTimers();
@@ -263,10 +269,10 @@ describe('chatTurn', () => {
       vi.useRealTimers();
     }
 
-    expect(chunks.filter((chunk) => chunk === HEARTBEAT)).toHaveLength(DOTS_IN_A_SLOW_PLAN);
+    expect(chunks.filter((chunk) => chunk === WRITING_STATUS)).toHaveLength(WRITING_LINES_IN_A_SLOW_PLAN);
   });
 
-  it('should keep the heartbeat dots out of the saved assistant message', async () => {
+  it('should keep the status lines out of the saved assistant message', async () => {
     const { deps, state } = harness(planTurn(), [{ text: PLAN_JSON, afterMs: SLOW_PLAN_MS }]);
     vi.useFakeTimers();
 

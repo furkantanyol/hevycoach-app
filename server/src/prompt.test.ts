@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { contextBlock, PLAN_OUTPUT_SCHEMA, planTask, SYSTEM_PROMPT, untrusted, USER_INPUT_CLOSE, USER_INPUT_OPEN } from './prompt.js';
+import { PLAN_OUTPUT_SCHEMA, planTask, readTask } from './plan-prompt.js';
+import { contextBlock, STYLE_RULES, SYSTEM_PROMPT, untrusted, USER_INPUT_CLOSE, USER_INPUT_OPEN } from './prompt.js';
 import { emptyState, type Block, type Exercise, type IntakeState, type Profile, type State } from './state.js';
 
 const profile: Profile = {
@@ -40,8 +41,8 @@ const PROFILE_LINES = [
   'Injuries: knee, shoulder',
 ].join('\n');
 
-const PLAN_HEADINGS = ['**Where you stand**', '**Your block**', '**This week**'];
-const SESSION_BULLET = 'Day 1 – Heavy Lower: box squat, deadlift, hip thrust';
+const THIS_WEEK = `Write the analysis as markdown: the bold heading **This week**, then two bullets, one on how to run the first sessions and one on what you are watching. ${STYLE_RULES} Never a question. The athlete has already read your read of them; do not repeat it.`;
+const READ = 'Squat 130, bench stuck at 105. This block earns the bench back.';
 
 function analysisDescription(): string {
   const properties = PLAN_OUTPUT_SCHEMA.properties as { analysis: { description: string } };
@@ -123,7 +124,7 @@ describe('contextBlock', () => {
   });
 
   it('should name the session and its focus when a block exists', () => {
-    expect(contextBlock(stateWith({ block }))).toContain('Upper A — horizontal push and pull');
+    expect(contextBlock(stateWith({ block }))).toContain('Upper A: horizontal push and pull');
   });
 
   it('should name the session a pending proposal would change', () => {
@@ -208,16 +209,31 @@ describe('SYSTEM_PROMPT', () => {
     expect(SYSTEM_PROMPT).toContain('waits in the pending proposal until they accept it');
   });
 
-  it('should hold a chat reply to two to five short lines', () => {
-    expect(SYSTEM_PROMPT).toContain('A chat reply is two to five short lines');
+  it('should hold a chat reply to five lines, with bullets for two or more points', () => {
+    expect(SYSTEM_PROMPT).toContain('A chat reply is at most five lines: bullets when there are two or more points');
   });
 
-  it('should allow bullets and bold headings in the plan and the review', () => {
-    expect(SYSTEM_PROMPT).toContain('bullets and bold headings are allowed');
+  it('should quote the one style rule in the voice', () => {
+    expect(SYSTEM_PROMPT).toContain(STYLE_RULES);
   });
 });
 
 describe('planTask', () => {
+  const CURRENT = 'Lower [r-1]\n- Squat (Barbell) [SQ]: 5x100kg';
+
+  it('should put the current routines in the untrusted data and say to continue them', () => {
+    const task = planTask(profile, 'history', 'catalogue', 'reason', CURRENT);
+    const body = task.slice(task.indexOf(USER_INPUT_OPEN), task.indexOf(USER_INPUT_CLOSE));
+
+    expect([body, task]).toEqual([expect.stringContaining(`## Current routines\n${CURRENT}`), expect.stringContaining('continuing the routines')]);
+  });
+
+  it('should say nothing about continuing when no current routines are given', () => {
+    const task = planTask(profile, 'history', 'catalogue', 'reason');
+
+    expect(task).not.toContain('Current routines');
+  });
+
   it('should wrap the history in the untrusted delimiters', () => {
     const task = planTask(profile, 'Bench Press: 12 sessions', 'template-bench Bench Press', 'intake done');
     const body = task.slice(task.indexOf(USER_INPUT_OPEN), task.indexOf(USER_INPUT_CLOSE));
@@ -252,21 +268,42 @@ describe('planTask', () => {
     expect(planTask(profile, 'history', 'catalogue', 'reason')).toContain('Never return an empty block');
   });
 
-  it.each(PLAN_HEADINGS)('should ask the plan message for the %s heading', (heading) => {
-    expect(planTask(profile, 'history', 'catalogue', 'reason')).toContain(heading);
+  it('should ask for this week in a line or two, the read having gone first', () => {
+    expect(planTask(profile, 'history', 'catalogue', 'reason')).toContain(THIS_WEEK);
   });
 
-  it('should show the shape of one session bullet', () => {
-    expect(planTask(profile, 'history', 'catalogue', 'reason')).toContain(SESSION_BULLET);
+  it('should hand the block the read the athlete has already seen', () => {
+    const task = planTask(profile, 'history', 'catalogue', 'reason', undefined, READ);
+
+    expect(task).toContain(`already shown to the athlete. The block keeps its word:\n${READ}`);
+  });
+
+  it('should say nothing about a read when none was made', () => {
+    expect(planTask(profile, 'history', 'catalogue', 'reason')).not.toContain('already shown');
+  });
+});
+
+describe('readTask', () => {
+  it('should wrap the profile and the history in the untrusted delimiters', () => {
+    const task = readTask(profile, 'Bench Press: 12 sessions');
+    const body = task.slice(task.indexOf(USER_INPUT_OPEN), task.indexOf(USER_INPUT_CLOSE));
+
+    expect([body, body]).toEqual([expect.stringContaining('Bench Press: 12 sessions'), expect.stringContaining('muscle')]);
+  });
+
+  it('should ask for a few plain lines and keep the block for later', () => {
+    const task = readTask(profile, 'history');
+
+    expect([task, task]).toEqual([expect.stringContaining('**Where you stand**'), expect.stringContaining("Do not name the block's exercises or loads yet")]);
+  });
+
+  it('should carry the current routines when the athlete is continuing', () => {
+    expect(readTask(profile, 'history', 'Lower [r-1]')).toContain('## Current routines\nLower [r-1]');
   });
 });
 
 describe('PLAN_OUTPUT_SCHEMA', () => {
-  it.each(PLAN_HEADINGS)('should describe the analysis with the %s heading', (heading) => {
-    expect(analysisDescription()).toContain(heading);
-  });
-
-  it('should describe the analysis with the shape of one session bullet', () => {
-    expect(analysisDescription()).toContain(SESSION_BULLET);
+  it('should describe the analysis as the lines for this week', () => {
+    expect(analysisDescription()).toContain(THIS_WEEK);
   });
 });

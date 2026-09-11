@@ -1,4 +1,4 @@
-import { type ExerciseTemplate, type HevyClient, MAX_PAGE_SIZE, type Workout, type WorkoutExercise, type WorkoutSet } from '@furkantanyol/hevy-client';
+import { type CreateRoutineInput, type ExerciseTemplate, HevyApiError, type HevyClient, MAX_PAGE_SIZE, type Routine, type Workout, type WorkoutExercise, type WorkoutSet } from 'hevy-sdk';
 import type { Block, Exercise, Session } from './state.js';
 
 export interface ExerciseHistory {
@@ -30,7 +30,10 @@ export interface TemplateOption {
 /** Trims the prompt text only. The summary itself keeps every exercise, so the guard caps on the real best weight. */
 export const TOP_EXERCISES = 40;
 export const PER_GROUP = 12;
-export const ROUTINE_FOLDER = 'HevyCoach';
+/** Working name, as on the app's title: "Hevy Coach" is Hevy's own coaching product. */
+export const ROUTINE_FOLDER = 'Coach';
+/** Hevy's set type for warm-ups, which are never volume and never a working set. */
+export const WARMUP_SET = 'warmup';
 
 const EPLEY_DIVISOR = 30;
 const TREND_SESSIONS = 3;
@@ -39,7 +42,6 @@ const FREQUENCY_WINDOW_WEEKS = 4;
 const MS_PER_DAY = 86_400_000;
 const TENTH = 10;
 const DATE_LENGTH = 10;
-const WARMUP_SET = 'warmup';
 const UNKNOWN = 'unknown';
 
 interface SetSummary {
@@ -262,10 +264,37 @@ async function folderId(client: HevyClient): Promise<number> {
 
 async function writeSession(client: HevyClient, session: Session, folder: number): Promise<Session> {
   const exercises = session.exercises.map(toRoutineExercise);
-  const routine = session.hevyRoutineId
-    ? await client.routines.update(session.hevyRoutineId, { title: session.name, exercises })
-    : await client.routines.create({ title: session.name, folder_id: folder, exercises });
-  return { ...session, hevyRoutineId: routine.id };
+  const routine: CreateRoutineInput = { title: session.name, folder_id: folder, exercises };
+  const written = session.hevyRoutineId ? await updateOrRecreate(client, session.hevyRoutineId, routine) : await client.routines.create(routine);
+  return { ...session, hevyRoutineId: routineIdOf(written) };
+}
+
+/** A folder deleted in Hevy takes its routines with it (seen 2026-09-11 13:08): a tracked routine that is gone is written anew. */
+async function updateOrRecreate(client: HevyClient, id: string, routine: CreateRoutineInput): Promise<Routine> {
+  try {
+    return await client.routines.update(id, routine);
+  } catch (error) {
+    if (!(error instanceof HevyApiError && error.isNotFound)) throw error;
+    return client.routines.create(routine);
+  }
+}
+
+/** Hevy has answered a routine write with the routine inside an array; the SDK's unwrap leaves that as is. */
+function routineIdOf(written: Routine | Routine[]): string | null {
+  const routine = Array.isArray(written) ? written[0] : written;
+  return typeof routine?.id === 'string' ? routine.id : null;
+}
+
+/**
+ * A write whose response carried no id (seen live 2026-09-11: the block saved with `null` ids, so the
+ * next plan created duplicates and the cards matched nothing) gets it back from the folder by title.
+ */
+async function withRecoveredIds(client: HevyClient, folder: number, sessions: Session[]): Promise<Session[]> {
+  if (sessions.every((session) => session.hevyRoutineId)) return sessions;
+  const inFolder = (await client.routines.listAll()).filter((routine) => routine.folder_id === folder);
+  return sessions.map((session) =>
+    session.hevyRoutineId ? session : { ...session, hevyRoutineId: inFolder.find((routine) => routine.title === session.name)?.id ?? null },
+  );
 }
 
 export async function writeRoutines(client: HevyClient, block: Block): Promise<Block> {
@@ -274,7 +303,7 @@ export async function writeRoutines(client: HevyClient, block: Block): Promise<B
   for (const session of block.sessions) {
     sessions.push(await writeSession(client, session, folder));
   }
-  return { ...block, sessions };
+  return { ...block, sessions: await withRecoveredIds(client, folder, sessions) };
 }
 
 export function findSession(block: Block | null, workout: Workout): Session | null {

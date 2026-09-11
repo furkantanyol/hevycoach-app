@@ -15,23 +15,37 @@ import {
   type ThreadHistoryAdapter,
 } from '@assistant-ui/react-native';
 
-import { serverErrorMessage, serverFetch } from './lib/server';
+import { serverChanged, serverErrorMessage, serverFetch } from './lib/server';
 import type { Message } from './lib/types';
 
 const ERROR_PREFIX = 'Coach unavailable: ';
 const MESSAGES_PATH = '/messages';
+/** Mirrors the server's STATUS_MARK: a line "\u001E<text>\n" in the stream is a status for the wait, not part of the reply. */
+const STATUS_MARK = '\u001E';
+const LINE_END = '\n';
 
 interface UserTurn {
   readonly text: string;
-  readonly choice: string | null;
+  readonly choice: string | string[] | null;
+}
+
+/**
+ * What has streamed so far: the reply as text parts, and the latest status line. A status that
+ * arrives after words are already on screen closes that part, and the words after it open a new
+ * one — the plan's read, then its lines for the week, each in its own bubble.
+ */
+interface Streamed {
+  readonly parts: readonly string[];
+  readonly status: string | null;
 }
 
 /** Every call to the coach server: base URL + bearer token. Lives in lib/server. */
 export { serverFetch as coachFetch } from './lib/server';
 
-/** The `choice` half of POST /messages: one tapped pill, so one value. */
-function readChoice(value: unknown): string | null {
-  return typeof value === 'string' ? value : null;
+/** The `choice` half of POST /messages: one tapped pill, or the pills a multi-select question sent together. */
+function readChoice(value: unknown): string | string[] | null {
+  if (typeof value === 'string') return value;
+  return Array.isArray(value) && value.every((entry): entry is string => typeof entry === 'string') ? value : null;
 }
 
 function lastUserTurn(messages: readonly ThreadMessage[]): UserTurn {
@@ -46,12 +60,13 @@ function lastUserTurn(messages: readonly ThreadMessage[]): UserTurn {
   };
 }
 
-/** `kind`, `choices` and `input` are what the message renderer reads back. */
+/** `kind`, `choices`, `multi` and `block` are what the message renderer reads back. */
 function customOf(message: Message): Record<string, unknown> {
   return {
     ...(message.kind !== undefined && { kind: message.kind }),
     ...(message.choices !== undefined && { choices: message.choices }),
-    ...(message.input !== undefined && { input: message.input }),
+    ...(message.multi !== undefined && { multi: message.multi }),
+    ...(message.block !== undefined && { block: message.block }),
   };
 }
 
@@ -82,27 +97,64 @@ async function tailCustom(): Promise<Record<string, unknown> | null> {
   }
 }
 
-/** Plain text read as it lands: every chunk yields the whole reply so far. */
+/**
+ * A status line still arriving (no line end yet) counts as the latest: statuses
+ * are short and land in one chunk, and showing the head of one beats a blank.
+ */
+function parseStream(raw: string): Streamed {
+  const [head = '', ...marked] = raw.split(STATUS_MARK);
+  const parts = [head];
+  let status: string | null = null;
+  for (const segment of marked) {
+    const end = segment.indexOf(LINE_END);
+    if (end === -1) {
+      status = segment;
+      continue;
+    }
+    status = segment.slice(0, end);
+    const words = segment.slice(end + LINE_END.length);
+    if (parts.at(-1) === '') parts[parts.length - 1] = words;
+    else parts.push(words);
+  }
+  return { parts, status };
+}
+
+/**
+ * The stream read as it lands: the reply so far as the text part, the server's
+ * latest status in `metadata.custom.status` for the typing indicator. Each is
+ * yielded only when it changes; the saved message's own metadata replaces the
+ * status once the reply is complete.
+ */
 async function* streamReply(
   body: ReadableStream<Uint8Array<ArrayBuffer>>,
   abortSignal: AbortSignal,
 ): AsyncGenerator<ChatModelRunResult, void> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
-  let text = '';
+  let raw = '';
+  let shown: Streamed = { parts: [''], status: null };
+
+  function* show(next: Streamed): Generator<ChatModelRunResult, void> {
+    if (next.status !== shown.status) yield { metadata: { custom: { status: next.status } } };
+    if (next.parts.join(STATUS_MARK) !== shown.parts.join(STATUS_MARK)) {
+      yield { content: next.parts.map((text) => ({ type: 'text', text })) };
+    }
+    shown = next;
+  }
+
   try {
     while (!abortSignal.aborted) {
       const { done, value } = await reader.read();
       if (done) break;
-      text += decoder.decode(value, { stream: true });
-      yield { content: [{ type: 'text', text }] };
+      raw += decoder.decode(value, { stream: true });
+      yield* show(parseStream(raw));
     }
   } finally {
     reader.releaseLock();
   }
 
   const tail = decoder.decode();
-  if (tail) yield { content: [{ type: 'text', text: text + tail }] };
+  if (tail) yield* show(parseStream(raw + tail));
 }
 
 export const coachChatAdapter: ChatModelAdapter = {
@@ -129,6 +181,7 @@ export const coachChatAdapter: ChatModelAdapter = {
     if (abortSignal.aborted) return;
     const custom = await tailCustom();
     if (custom !== null) yield { metadata: { custom } };
+    serverChanged();
   },
 };
 

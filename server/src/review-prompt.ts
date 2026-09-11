@@ -1,4 +1,5 @@
-import { EXERCISE_SCHEMA, NO_MEMORY, untrusted } from './prompt.js';
+import { EXERCISE_SCHEMA } from './plan-prompt.js';
+import { NO_MEMORY, STYLE_RULES, untrusted } from './prompt.js';
 
 /** Passed as the targets when a finished workout matches no session in the block. */
 export const NO_TARGETS = 'no targets: this workout is not part of the current block';
@@ -6,11 +7,11 @@ export const NO_TARGETS = 'no targets: this workout is not part of the current b
 export const MEMORY_MAX_CHARACTERS = 1500;
 
 /** The shape of the review the athlete reads. Stated in the task and in the schema so the two cannot drift. */
-const REVIEW_MARKDOWN = `Write it as markdown, bold headings with one to three short bullets each, in this order.
+const REVIEW_MARKDOWN = `Write it as markdown, bold headings with one to three bullets each, in this order.
 **Went well**
 **Push next time**
-**Proposed change** — only when you are proposing one; leave the heading out entirely otherwise.
-Then the question, as a plain last line outside the bullets. No emoji.`;
+**Proposed change**, only when you are proposing one; leave the heading out entirely otherwise.
+Then the question, as one plain last line outside the bullets. ${STYLE_RULES}`;
 
 /** One session of the current block, rewritten whole. The guard bounds the numbers before any of it reaches Hevy. */
 const PROPOSAL_SCHEMA = {

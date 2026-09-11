@@ -1,4 +1,4 @@
-import { createHevyClient, type Workout } from '@furkantanyol/hevy-client';
+import { createHevyClient, type Workout } from 'hevy-sdk';
 import { describe, expect, it } from 'vitest';
 import { recentWorkouts } from './hevy.js';
 

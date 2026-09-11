@@ -82,6 +82,13 @@ export function describeError(error: unknown): string {
  * every later return to the screen, so there is no separate mount effect to
  * double the request. Only call this from inside a navigator screen.
  */
+const changeListeners = new Set<() => void>();
+
+/** A finished turn may have written a block or applied a change: every `useServer` reads again. */
+export function serverChanged(): void {
+  for (const listener of changeListeners) listener();
+}
+
 export function useServer<T>(path: string): ServerState<T> {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -110,6 +117,13 @@ export function useServer<T>(path: string): ServerState<T> {
   }, [load]);
 
   useFocusEffect(refresh);
+
+  useEffect(() => {
+    changeListeners.add(refresh);
+    return () => {
+      changeListeners.delete(refresh);
+    };
+  }, [refresh]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (state) => {

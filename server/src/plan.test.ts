@@ -1,12 +1,13 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { createHevyClient } from '@furkantanyol/hevy-client';
+import { createHevyClient } from 'hevy-sdk';
 import { describe, expect, it } from 'vitest';
 import type { CoachDeps } from './coach.js';
-import { createProgram } from './plan.js';
+import { createProgram, runProgram } from './plan.js';
 import { contextBlock, SYSTEM_PROMPT, USER_INPUT_CLOSE, USER_INPUT_OPEN } from './prompt.js';
 import { emptyState, type Message, type Profile } from './state.js';
 
 const OK = 200;
+const READ = 'Squat has stalled for three sessions; this block brings the load down and keeps the volume.';
 const NOT_FOUND = 404;
 const TEMPLATE_ID = 'SQ';
 const TEMPLATE_TITLE = 'Squat (Barbell)';
@@ -28,8 +29,7 @@ const SESSION_A = 'Lower A';
 const SESSION_B = 'Lower B';
 const BLOCK_NAME = 'Autumn block';
 const SESSION_COUNT = 2;
-const ROUTINE_NAMES = `Open Hevy → Routines → HevyCoach: ${SESSION_A}, ${SESSION_B}`;
-const CONFIRMATION = `Block written to Hevy: ${BLOCK_NAME}, ${SESSION_COUNT} sessions — ${SESSION_A}, ${SESSION_B}. The analysis has already been shown to the athlete; add at most two short lines: what to do first and one question. Do not repeat the analysis.`;
+const CONFIRMATION = `Block written to Hevy: ${BLOCK_NAME}, ${SESSION_COUNT} sessions — ${SESSION_A}, ${SESSION_B}. Your read and the lines for this week have already been shown to the athlete; add at most two short lines: what to do first and one question. Do not repeat them.`;
 /** What the guard writes into the analysis once it stops asking the model and bounds the load itself. */
 const ADJUSTMENT = `${TEMPLATE_TITLE} in ${SESSION_A}: weight capped at ${CAP_KG} kg (planned ${OVER_CAP_KG} kg)`;
 
@@ -87,12 +87,30 @@ interface Sent {
   messages: { role: string; content: string }[];
 }
 
+
+/** One streamed text reply, as the SDK's stream parser expects it: the read of the athlete, in one delta. */
+function sseResponse(text: string): Response {
+  const start = { type: 'message_start', message: { id: 'msg-stream', type: 'message', role: 'assistant', model: 'plan-model', content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 1, output_tokens: 1 } } };
+  const frames = [
+    start,
+    { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+    { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text } },
+    { type: 'content_block_stop', index: 0 },
+    { type: 'message_delta', delta: { stop_reason: 'end_turn', stop_sequence: null }, usage: { output_tokens: 2 } },
+    { type: 'message_stop' },
+  ];
+  const body = frames.map((frame) => `event: ${frame.type}\ndata: ${JSON.stringify(frame)}\n\n`).join('');
+  return new Response(body, { status: OK, headers: { 'content-type': 'text/event-stream' } });
+}
+
+/** Every reply the model gives, in order; the streamed read is answered as SSE, the JSON plans as messages. */
 function anthropicStub(texts: string[]) {
   const sent: Sent[] = [];
   const fetchImpl: typeof fetch = async (_input, init) => {
     const body = typeof init?.body === 'string' ? init.body : '{}';
     sent.push(JSON.parse(body) as Sent);
     const text = texts[sent.length - 1] ?? '';
+    if (body.includes('"stream":true')) return sseResponse(text);
     const message = {
       id: `msg-${sent.length}`,
       type: 'message',
@@ -131,7 +149,7 @@ function hevyStub() {
     '/v1/body_measurements': () => listed('body_measurements', []),
     '/v1/exercise_templates': () => listed('exercise_templates', [template]),
     '/v1/routine_folders': (call) =>
-      call.method === 'POST' ? { id: FOLDER_ID, index: 0, title: 'HevyCoach', updated_at: '', created_at: '' } : listed('routine_folders', []),
+      call.method === 'POST' ? { id: FOLDER_ID, index: 0, title: 'Coach', updated_at: '', created_at: '' } : listed('routine_folders', []),
     '/v1/routines': () => ({ routine: { id: NEW_ROUTINE_ID } }),
   };
 
@@ -187,18 +205,18 @@ const routinePost = (title: string, weightKg = APPROVED_KG): Call => ({
 
 describe('createProgram', () => {
   it('should retry the plan once, naming the violation, when the guard rejects the first block', async () => {
-    const { deps, sent } = harness([planJson(OVER_CAP_KG), planJson(APPROVED_KG)]);
+    const { deps, sent } = harness([READ, planJson(OVER_CAP_KG), planJson(APPROVED_KG)]);
 
     await createProgram(deps, { profile: PROFILE, reason: 'intake answered' });
 
-    expect(sent).toHaveLength(2);
-    expect(sent[1].messages.at(-1)?.content).toContain(
+    expect(sent).toHaveLength(3);
+    expect(sent[2].messages.at(-1)?.content).toContain(
       `weightKg ${OVER_CAP_KG} is above the ${CAP_KG} kg cap (1.15 x best logged ${BEST_KG} kg)`,
     );
   });
 
   it('should log the analysis and the counts when a plan attempt returns an empty block', async () => {
-    const { deps, logs } = harness([EMPTY_PLAN_JSON, planJson(APPROVED_KG)]);
+    const { deps, logs } = harness([READ, EMPTY_PLAN_JSON, planJson(APPROVED_KG)]);
 
     await createProgram(deps, { profile: PROFILE, reason: 'intake answered' });
 
@@ -206,32 +224,32 @@ describe('createProgram', () => {
   });
 
   it('should send the cached system prompt and the coach context to the plan model', async () => {
-    const { deps, sent } = harness([planJson(APPROVED_KG)]);
+    const { deps, sent } = harness([READ, planJson(APPROVED_KG)]);
     deps.state.memory = MEMORY;
     const context = contextBlock(deps.state);
 
     await createProgram(deps, { profile: PROFILE, reason: 'intake answered' });
 
-    expect(sent[0].system).toEqual([
+    expect(sent[1].system).toEqual([
       { type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } },
       { type: 'text', text: context },
     ]);
   });
 
   it('should follow the recent thread with the plan task as the last user message', async () => {
-    const { deps, sent } = harness([planJson(APPROVED_KG)]);
+    const { deps, sent } = harness([READ, planJson(APPROVED_KG)]);
     deps.state.messages.push(said('user', SHOULDER_REPLY));
 
     await createProgram(deps, { profile: PROFILE, reason: 'shoulder reported' });
 
-    expect(sent[0].messages).toEqual([
+    expect(sent[1].messages).toEqual([
       { role: 'user', content: `${USER_INPUT_OPEN}\n${SHOULDER_REPLY}\n${USER_INPUT_CLOSE}` },
       { role: 'user', content: expect.stringContaining(PLAN_TASK_OPENING) },
     ]);
   });
 
   it('should write only the approved block to Hevy after a retry', async () => {
-    const { deps, written } = harness([planJson(OVER_CAP_KG), planJson(APPROVED_KG)]);
+    const { deps, written } = harness([READ, planJson(OVER_CAP_KG), planJson(APPROVED_KG)]);
 
     await createProgram(deps, { profile: PROFILE, reason: 'intake answered' });
 
@@ -239,23 +257,23 @@ describe('createProgram', () => {
   });
 
   it('should store the profile and the written routine id in state', async () => {
-    const { deps, state } = harness([planJson(APPROVED_KG)]);
+    const { deps, state } = harness([READ, planJson(APPROVED_KG)]);
 
     await createProgram(deps, { profile: PROFILE, reason: 'intake answered' });
 
     expect([state.profile, state.block?.sessions[0].hevyRoutineId]).toEqual([PROFILE, NEW_ROUTINE_ID]);
   });
 
-  it('should close the analysis with the line naming the routines', async () => {
-    const { deps } = harness([planJson(APPROVED_KG)]);
+  it('should return the read it streamed and the analysis that followed', async () => {
+    const { deps } = harness([READ, planJson(APPROVED_KG)]);
 
-    const result = await createProgram(deps, { profile: PROFILE, reason: 'intake answered' });
+    const program = await runProgram(deps, { profile: PROFILE, reason: 'intake answered' });
 
-    expect(result.analysis).toBe(`${ANALYSIS}\n\n${ROUTINE_NAMES}`);
+    expect([program.read, program.analysis]).toEqual([READ, ANALYSIS]);
   });
 
   it('should confirm the written block to the model without repeating the analysis', async () => {
-    const { deps } = harness([planJson(APPROVED_KG)]);
+    const { deps } = harness([READ, planJson(APPROVED_KG)]);
 
     const result = await createProgram(deps, { profile: PROFILE, reason: 'intake answered' });
 
@@ -263,7 +281,7 @@ describe('createProgram', () => {
   });
 
   it('should clamp the load and write the block when the retry still breaks the guard', async () => {
-    const { deps, written } = harness([planJson(OVER_CAP_KG), planJson(OVER_CAP_KG)]);
+    const { deps, written } = harness([READ, planJson(OVER_CAP_KG), planJson(OVER_CAP_KG)]);
 
     await createProgram(deps, { profile: PROFILE, reason: 'intake' });
 
@@ -271,15 +289,15 @@ describe('createProgram', () => {
   });
 
   it('should close the analysis with what the guard adjusted', async () => {
-    const { deps } = harness([planJson(OVER_CAP_KG), planJson(OVER_CAP_KG)]);
+    const { deps } = harness([READ, planJson(OVER_CAP_KG), planJson(OVER_CAP_KG)]);
 
-    const result = await createProgram(deps, { profile: PROFILE, reason: 'intake' });
+    const program = await runProgram(deps, { profile: PROFILE, reason: 'intake' });
 
-    expect(result.analysis).toBe(`${ANALYSIS}\n\n**Guard adjustments**\n- ${ADJUSTMENT}\n\n${ROUTINE_NAMES}`);
+    expect(program.analysis).toBe(`${ANALYSIS}\n\n**Guard adjustments**\n- ${ADJUSTMENT}`);
   });
 
   it('should throw when the second block breaks a rule no fix can bound', async () => {
-    const { deps } = harness([EMPTY_PLAN_JSON, EMPTY_PLAN_JSON]);
+    const { deps } = harness([READ, EMPTY_PLAN_JSON, EMPTY_PLAN_JSON]);
 
     await expect(createProgram(deps, { profile: PROFILE, reason: 'intake' })).rejects.toThrow(
       /broke the guard twice/,
@@ -287,7 +305,7 @@ describe('createProgram', () => {
   });
 
   it('should write nothing to Hevy when the guard rejects a shape it cannot fix', async () => {
-    const { deps, written } = harness([EMPTY_PLAN_JSON, EMPTY_PLAN_JSON]);
+    const { deps, written } = harness([READ, EMPTY_PLAN_JSON, EMPTY_PLAN_JSON]);
 
     await expect(createProgram(deps, { profile: PROFILE, reason: 'intake' })).rejects.toThrow();
 

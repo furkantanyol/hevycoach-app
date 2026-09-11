@@ -1,61 +1,24 @@
 /**
- * Card one: the week's total volume, the session count, and the seven days as
- * bars — Hevy's own widget, read from GET /cards.
- *
- * Swift Charts inside a SwiftUI `Host` was the intended renderer — that host
- * is the only place in the app allowed to hold SwiftUI, never a chat bubble —
- * but `NATIVE_CHART` is off, so the plain Views draw the bars. The gate is the
- * only difference between the two.
+ * Card one: the week's total volume, the session count, and the seven days —
+ * Hevy's widget bars on the card, one labelled row per day once the card is
+ * expanded. Everything comes from GET /cards.
  */
-import { Chart, Host } from '@expo/ui/swift-ui';
 import { StyleSheet, Text, View } from 'react-native';
 
-import { Bars } from './bars';
-import { CardCaption, CardLabel, SKELETON } from './card-text';
+import { Bars, DayRows, describeWeek } from './bars';
+import { CardCaption, CardHeader, SKELETON } from './card-text';
+import { formatTotal, plural } from './format';
 import { useTheme } from '../assistant-ui/theme';
 import type { CardsView } from '../../lib/types';
 
-/** Off: Chart hides no axes (only showGrid/showLegend), so the plain bars match Hevy's widget. */
-const NATIVE_CHART = false;
 const LABEL = 'Volume';
-const CHART_LABEL = 'Volume by day this week';
 /** The one grey line the carousel shows when GET /cards failed. */
 const UNAVAILABLE = 'Cards unavailable';
-const KILO = 1000;
-const BAR_RADIUS = 4;
-
-type WeekVolume = CardsView['weekVolume'];
 
 interface WeekVolumeCardProps {
   readonly view: CardsView | null;
   readonly error: string | null;
-}
-
-/** Hevy writes five figures as "38.3k kg" and anything smaller in whole kilos. */
-function formatTotal(totalKg: number): string {
-  if (totalKg >= KILO) return `${(totalKg / KILO).toFixed(1)}k kg`;
-  return `${Math.round(totalKg)} kg`;
-}
-
-function sessionsLine(sessions: number): string {
-  return sessions === 1 ? '1 session this week' : `${sessions} sessions this week`;
-}
-
-/**
- * Swift Charts plots a string x as a category, so the seven keys have to be
- * distinct: 'M', 'T', 'W', 'T', 'F', 'S', 'S' would fold Thursday into Tuesday
- * and Sunday into Saturday. The server's own 'Mon'…'Sun' are unique, and they
- * are what the axis labels.
- */
-function NativeChart({ byDay }: { readonly byDay: WeekVolume['byDay'] }) {
-  const { colors } = useTheme();
-  const points = byDay.map((entry) => ({ x: entry.day, y: entry.kg, color: colors.accent }));
-
-  return (
-    <Host style={styles.host}>
-      <Chart data={points} type="bar" barStyle={{ cornerRadius: BAR_RADIUS }} />
-    </Host>
-  );
+  readonly expanded?: boolean;
 }
 
 /** Loading shows the skeleton; a failed request shows one grey line instead. */
@@ -64,7 +27,7 @@ function VolumePlaceholder({ error }: { readonly error: string | null }) {
 
   return (
     <View>
-      <CardLabel>{LABEL}</CardLabel>
+      <CardHeader label={LABEL} chevron={false} />
       {error === null ? (
         <Text style={[styles.total, { color: colors.foreground }]}>{SKELETON}</Text>
       ) : (
@@ -76,33 +39,33 @@ function VolumePlaceholder({ error }: { readonly error: string | null }) {
   );
 }
 
-export function WeekVolumeCard({ view, error }: WeekVolumeCardProps) {
+export function WeekVolumeCard({ view, error, expanded = false }: WeekVolumeCardProps) {
   const { colors } = useTheme();
-  const weekVolume = view === null ? null : view.weekVolume;
 
-  if (weekVolume === null) return <VolumePlaceholder error={error} />;
+  if (view === null) return <VolumePlaceholder error={error} />;
+  const { totalKg, sessions, byDay } = view.weekVolume;
 
   return (
     <View style={styles.card}>
-      <View style={styles.figures}>
-        <CardLabel>{LABEL}</CardLabel>
-        <Text style={[styles.total, { color: colors.foreground }]} numberOfLines={1}>
-          {formatTotal(weekVolume.totalKg)}
-        </Text>
-        <CardCaption>{sessionsLine(weekVolume.sessions)}</CardCaption>
-      </View>
-      <View
-        accessible
-        accessibilityRole="image"
-        accessibilityLabel={CHART_LABEL}
-        style={styles.chart}
-      >
-        {NATIVE_CHART ? (
-          <NativeChart byDay={weekVolume.byDay} />
-        ) : (
-          <Bars byDay={weekVolume.byDay} />
-        )}
-      </View>
+      <CardHeader label={LABEL} chevron={!expanded} />
+      <Text style={[styles.total, { color: colors.foreground }]} numberOfLines={1}>
+        {formatTotal(totalKg)}
+      </Text>
+      <CardCaption>{`${plural(sessions, 'session')} this week`}</CardCaption>
+      {expanded ? (
+        <View style={styles.rows}>
+          <DayRows byDay={byDay} />
+        </View>
+      ) : (
+        <View
+          accessible
+          accessibilityRole="image"
+          accessibilityLabel={describeWeek(byDay)}
+          style={styles.chart}
+        >
+          <Bars byDay={byDay} />
+        </View>
+      )}
     </View>
   );
 }
@@ -110,25 +73,19 @@ export function WeekVolumeCard({ view, error }: WeekVolumeCardProps) {
 const styles = StyleSheet.create({
   card: {
     flex: 1,
-    flexDirection: 'row',
-    gap: 12,
-  },
-  figures: {
-    flex: 1,
-    justifyContent: 'center',
-    gap: 2,
-  },
-  chart: {
-    flex: 1,
-  },
-  host: {
-    flex: 1,
   },
   total: {
     fontSize: 34,
     fontWeight: '700',
     letterSpacing: -0.4,
     fontVariant: ['tabular-nums'],
+  },
+  chart: {
+    flex: 1,
+    paddingTop: 12,
+  },
+  rows: {
+    paddingTop: 12,
   },
   unavailable: {
     fontSize: 15,

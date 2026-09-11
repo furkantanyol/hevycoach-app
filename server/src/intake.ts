@@ -1,24 +1,25 @@
-import { type CoachDeps, routineNamesLine, runProgram } from './coach.js';
+import { type CoachDeps, describe } from './coach.js';
 import { type Prefill, prefillFrom, PREFILL_WORKOUTS } from './derived.js';
 import { historySummary, recentWorkouts } from './hevy.js';
-import { type Answer, answerOf, CHANGED, DONE, interpret, isPath, YES } from './intake-answer.js';
-import { chosen, isLoopStep, labelsOf, loopQuestion, type Question, QUESTIONS, WEIGH_QUESTION } from './intake-script.js';
+import { type Answer, answerOf, CHANGED, interpret, isPath, YES } from './intake-answer.js';
+import { writePlan } from './intake-plan.js';
+import { type Question, QUESTIONS, WEIGH_QUESTION } from './intake-script.js';
+import { NO_REPORT, type Reporter } from './progress.js';
 import type { IntakePath, IntakeStep, Message, Profile, State } from './state.js';
 import { newMessage } from './thread.js';
 
-const INITIAL_REASON = 'Initial intake';
-/** The one line the new-to-Hevy script closes on: nothing reaches the coach that is not logged. */
-const LOG_IN_HEVY = "Log your sessions in Hevy and I'll read them.";
-const PLAN_FAILED = 'I could not write your block into Hevy just then. Ask me to try again and I will.';
 const UNCLEAR = 'I did not catch that. ';
-const NO_GOALS = 'Pick at least one first. ';
-const NOTED = ', noted. ';
 const OPENER_FAILED = 'intake opener: could not read the Hevy history';
-const PLAN_LOG_FAILED = 'intake plan failed';
 /** The athlete's own words are kept whole up to here; the plan prompt reads them as untrusted text. */
 const NOTES_MAX = 1000;
-/** Until the opener is answered, and for a script saved before the branch existed. */
+/** Until the journey question is answered, and for a script saved before the branch existed. */
 const DEFAULT_PATH: IntakePath = 'existing';
+/**
+ * Ten logged sessions read as a history: equipment and a weekly rhythm show in them, and there is
+ * something to continue. Under that the new-to-Hevy script runs and asks what the history cannot
+ * answer yet. Never ask what it already does.
+ */
+export const ENOUGH_HISTORY = 10;
 
 /** What the history cannot answer, from the amendment: full gym, an hour, and a beginner's history. */
 const DEFAULTS = { equipment: 'full_gym', sessionMinutes: 60, yearsTraining: '<1' } as const;
@@ -26,24 +27,39 @@ const DEFAULTS = { equipment: 'full_gym', sessionMinutes: 60, yearsTraining: '<1
 const FALLBACK = { goals: ['muscle'], daysPerWeek: 3, bodyweightKg: 80 } as const;
 
 /** One reply being answered. The history is read at most once, by the steps that need it, or not at all. */
-interface Turn {
+export interface Turn {
   deps: CoachDeps;
   step: IntakeStep;
   path: IntakePath;
   answers: Partial<Profile>;
   history: Prefill | null;
+  /** Where the athlete hears the script: the stream of the reply being answered, or nowhere for the opener. */
+  report: Reporter;
 }
 
-/** 'start' is in neither list, so answering the opener lands on the first question of the branch it chose. */
+/**
+ * 'journey' is in no list, so its answer lands on the first step of the path it chose. The continue
+ * path asks least: days a week come from the history it is continuing.
+ */
 const PATH_STEPS: Record<IntakePath, readonly IntakeStep[]> = {
-  existing: ['goals', 'daysPerWeek', 'injuries', 'bodyweight'],
-  new: ['yearsTraining', 'daysPerWeek', 'equipment', 'goals', 'injuries', 'bodyweight'],
+  existing: ['goals', 'daysPerWeek', 'injuries', 'bodyweight', 'notes'],
+  new: ['yearsTraining', 'daysPerWeek', 'equipment', 'goals', 'injuries', 'bodyweight', 'notes'],
+  continue: ['goals', 'injuries', 'bodyweight', 'notes'],
 };
 
-const welcome = (workouts: number): string =>
-  `I'm your coach on top of Hevy. I've read your ${workouts} workouts. A few questions, then I'll write your first block into Hevy.`;
+const hasHistory = (workouts: number): boolean => workouts >= ENOUGH_HISTORY;
 
-const describe = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+const OPENING = "I'm your coach on top of Hevy.";
+const CLOSING = "then I'll write your first block into Hevy.";
+
+/** Says what was read, so the question that follows never asks what the count already answers. */
+function welcome(workouts: number): string {
+  if (hasHistory(workouts)) return `${OPENING} I've read your ${workouts} workouts.`;
+  if (workouts === 0) return `${OPENING} Nothing is logged yet, so a few questions first, ${CLOSING}`;
+  const noun = workouts === 1 ? 'workout' : 'workouts';
+  return `${OPENING} I've read your ${workouts} ${noun}, too few to read your habits from yet, so a few questions first, ${CLOSING}`;
+}
+
 
 async function prefill(deps: CoachDeps): Promise<Prefill> {
   const summary = await historySummary(deps.hevy);
@@ -56,17 +72,6 @@ async function history(turn: Turn): Promise<Prefill> {
 }
 
 const heldBodyweight = async (turn: Turn): Promise<number | null> => (await history(turn)).bodyweightKg;
-
-const union = <T extends string>(before: readonly T[] = [], added: readonly T[] = []): T[] => [...new Set([...before, ...added])];
-
-/** A loop answer only ever adds: "Nothing" is offered on the first injuries ask alone, where the list is empty. */
-function merged(turn: Turn, answer: Partial<Profile>): Partial<Profile> {
-  const { step } = turn;
-  const answers = { ...turn.answers, ...answer };
-  if (!isLoopStep(step)) return answers;
-  if (step === 'goals') return { ...answers, goals: union(turn.answers.goals, answer.goals) };
-  return { ...answers, injuries: union(turn.answers.injuries, answer.injuries) };
-}
 
 async function bodyweightQuestion(turn: Turn): Promise<Question> {
   const held = turn.path === 'new' ? null : await heldBodyweight(turn);
@@ -84,27 +89,26 @@ async function bodyweightQuestion(turn: Turn): Promise<Question> {
 /** Only the confirmation reads the history, and only the existing script has a number to confirm. */
 async function questionOf(step: IntakeStep, turn: Turn): Promise<Question> {
   if (step === 'bodyweight') return bodyweightQuestion(turn);
-  if (isLoopStep(step)) return loopQuestion(step, turn.answers);
   return QUESTIONS[step];
 }
 
+/** The typed bodyweight is the second half of the bodyweight step, so it moves on from the same place. */
 function nextStep(path: IntakePath, step: IntakeStep): IntakeStep | null {
-  if (step === 'bodyweightValue') return null;
   const steps = PATH_STEPS[path];
-  return steps[steps.indexOf(step) + 1] ?? null;
+  return steps[steps.indexOf(step === 'bodyweightValue' ? 'bodyweight' : step) + 1] ?? null;
 }
 
-/** An `input` question replaces the pills: the app renders a numeric field under the message instead. */
+/** The bodyweight questions carry no pills: the athlete types the number into the composer. */
 function asked(text: string, question: Question): Message {
-  const message = newMessage('assistant', text);
-  if (question.input) return { ...message, input: question.input };
-  return { ...message, choices: question.choices };
+  return { ...newMessage('assistant', text), choices: question.choices, ...(question.multi && { multi: true }) };
 }
 
 function ask(turn: Turn, question: Question, prefix = ''): Promise<void> {
   const { deps, answers, path } = turn;
+  const text = `${prefix}${question.text}`;
   deps.state.intake = { step: question.step, answers, path };
-  deps.state.messages.push(asked(`${prefix}${question.text}`, question));
+  deps.state.messages.push(asked(text, question));
+  turn.report.say(text);
   return deps.save();
 }
 
@@ -114,36 +118,28 @@ export function intakeActive(state: State): boolean {
 
 const threadIsEmpty = (state: State): boolean => state.messages.length === 0 && state.profile === null;
 
-/** The app never invents the first message: the thread opens with the welcome and the branch question. */
+/**
+ * The app never invents the first message. With a history the thread opens on the welcome and the
+ * journey question; without one, on the first question of the new-to-Hevy script.
+ */
 export async function ensureOpener(deps: CoachDeps): Promise<void> {
   const { state } = deps;
   if (!threadIsEmpty(state)) return;
 
   try {
-    const { workouts } = await prefill(deps);
-    // Read again after the history call: two loads landing together both pass the first guard, and
-    // the one that returns first appends the opener before it yields, so the other sees it here.
+    const read = await prefill(deps);
+    const path = hasHistory(read.workouts) ? DEFAULT_PATH : 'new';
+    const step = hasHistory(read.workouts) ? 'journey' : PATH_STEPS.new[0];
+    const turn: Turn = { deps, step, path, answers: {}, history: read, report: NO_REPORT };
+    const question = await questionOf(step, turn);
+    // Read again after the awaits: two loads landing together both pass the first guard, and the one
+    // that returns first appends the opener before it yields, so the other sees it here.
     if (!threadIsEmpty(state)) return;
-    const turn: Turn = { deps, step: 'start', path: DEFAULT_PATH, answers: {}, history: null };
-    await ask(turn, QUESTIONS.start, `${welcome(workouts)}\n\n`);
+    await ask(turn, question, `${welcome(read.workouts)}\n\n`);
   } catch (error) {
     // The next load tries again: an opener written without the history would name a workout count it never read.
     deps.log(`${OPENER_FAILED}: ${describe(error)}`);
   }
-}
-
-/** The new script closes on one extra line, because nothing they do not log ever reaches the coach. */
-async function writePlan(turn: Turn, profile: Profile): Promise<void> {
-  const { deps } = turn;
-  try {
-    const { analysis, block } = await runProgram(deps, { profile, reason: INITIAL_REASON });
-    const tail = turn.path === 'new' ? [LOG_IN_HEVY] : [];
-    deps.state.messages.push(newMessage('assistant', [analysis, routineNamesLine(block), ...tail].join('\n\n'), { kind: 'plan' }));
-  } catch (error) {
-    deps.log(`${PLAN_LOG_FAILED}: ${describe(error)}`);
-    deps.state.messages.push(newMessage('assistant', PLAN_FAILED));
-  }
-  await deps.save();
 }
 
 /** The profile is saved before the block is written, so a failed plan leaves one they can re-run. */
@@ -152,7 +148,7 @@ async function complete(turn: Turn): Promise<void> {
   const past = await history(turn);
   const profile: Profile = {
     goals: answers.goals?.length ? answers.goals : [...FALLBACK.goals],
-    daysPerWeek: answers.daysPerWeek ?? FALLBACK.daysPerWeek,
+    daysPerWeek: answers.daysPerWeek ?? past.daysPerWeek ?? FALLBACK.daysPerWeek,
     bodyweightKg: answers.bodyweightKg ?? FALLBACK.bodyweightKg,
     injuries: answers.injuries ?? [],
     notes: answers.notes ?? '',
@@ -174,16 +170,9 @@ async function finish(turn: Turn): Promise<void> {
   return ask(turn, await questionOf(next, turn));
 }
 
-/** "No, that's it" with nothing chosen would save a profile the coach cannot plan from. */
-function closeLoop(turn: Turn): Promise<void> {
-  if (turn.step === 'goals' && chosen('goals', turn.answers).length === 0) return ask(turn, QUESTIONS.goals, NO_GOALS);
-  return finish(turn);
-}
-
 /** Only the bodyweight confirmation reads the history: its "yes" means the number Hevy holds. */
 async function fromChoice(turn: Turn, choice: string | string[]): Promise<Answer | null> {
   const value = Array.isArray(choice) ? choice[0] : choice;
-  if (isLoopStep(turn.step) && value === DONE) return DONE;
   if (turn.step !== 'bodyweight') return answerOf(turn.step, choice);
 
   if (value === CHANGED) return CHANGED;
@@ -200,6 +189,8 @@ function withNotes(answer: Answer | null, text: string): Answer | null {
 
 /** The model can only repeat the held bodyweight on a typed confirmation if the request carries it. */
 async function fromTyped(turn: Turn, text: string): Promise<Answer | null> {
+  // The closing note is kept as typed, on its own line after what the injury answer already noted.
+  if (turn.step === 'notes') return { notes: [turn.answers.notes, text.trim()].filter(Boolean).join('\n').slice(0, NOTES_MAX) };
   const heldBodyweightKg = turn.step === 'bodyweight' ? await heldBodyweight(turn) : null;
   const answer = await interpret(turn.deps, { step: turn.step, heldBodyweightKg }, text);
   return turn.step === 'injuries' ? withNotes(answer, text) : answer;
@@ -207,16 +198,8 @@ async function fromTyped(turn: Turn, text: string): Promise<Answer | null> {
 
 async function advance(turn: Turn, answer: Answer): Promise<void> {
   if (answer === CHANGED) return ask(turn, QUESTIONS.bodyweightValue);
-  if (answer === DONE) return closeLoop(turn);
   if (isPath(answer)) return finish({ ...turn, path: answer.path });
-
-  const { step } = turn;
-  const answers = merged(turn, answer);
-  if (!isLoopStep(step)) return finish({ ...turn, answers });
-  // An answer that names nothing new closes the loop, the same as tapping "No, that's it" does.
-  const added = chosen(step, answer);
-  if (added.length === 0) return closeLoop({ ...turn, answers });
-  return ask({ ...turn, answers }, loopQuestion(step, answers), `${labelsOf(step, added)}${NOTED}`);
+  return finish({ ...turn, answers: { ...turn.answers, ...answer } });
 }
 
 async function reAsk(turn: Turn): Promise<void> {
@@ -224,14 +207,19 @@ async function reAsk(turn: Turn): Promise<void> {
 }
 
 /** A tapped pill is parsed here; anything typed goes to the model, which maps it or reports it unclear. */
-export async function handleIntakeReply(deps: CoachDeps, text: string, choice: string | string[] | undefined): Promise<void> {
+export async function handleIntakeReply(
+  deps: CoachDeps,
+  text: string,
+  choice: string | string[] | undefined,
+  report: Reporter = NO_REPORT,
+): Promise<void> {
   const intake = deps.state.intake;
   if (!intake) return;
 
   deps.state.messages.push(newMessage('user', text));
   await deps.save();
 
-  const turn: Turn = { deps, step: intake.step, path: intake.path ?? DEFAULT_PATH, answers: intake.answers, history: null };
+  const turn: Turn = { deps, step: intake.step, path: intake.path ?? DEFAULT_PATH, answers: intake.answers, history: null, report };
   const answer = choice === undefined ? await fromTyped(turn, text) : await fromChoice(turn, choice);
   if (answer === null) return reAsk(turn);
   return advance(turn, answer);

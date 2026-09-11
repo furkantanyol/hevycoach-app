@@ -1,4 +1,4 @@
-import type { Workout, WorkoutExercise } from '@furkantanyol/hevy-client';
+import type { Workout, WorkoutExercise } from 'hevy-sdk';
 import type { ExerciseHistory, HistorySummary } from './hevy.js';
 import type { Block, Profile } from './state.js';
 
@@ -27,7 +27,7 @@ export interface WeekVolume {
   byDay: DayVolume[];
 }
 
-/** One exercise of the last workout, collapsed to the line the card prints. */
+/** One exercise of the last workout, collapsed to the line a card row prints. */
 export interface Lift {
   title: string;
   sets: number;
@@ -79,9 +79,6 @@ const HALF = 2;
 
 /** Monday first, so the bars read the way the week is lived. */
 const DAY_LABELS: readonly DayLabel[] = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-/** Each card has room for four lines. */
-const TOP_LIFTS = 4;
-const NEXT_SESSION_EXERCISES = 4;
 const WARMUP_SET = 'warmup';
 
 /** Hevy writes the equipment into the template title, e.g. "Bench Press (Barbell)". */
@@ -235,23 +232,24 @@ function liftOf(title: string, sets: WorkingSet[]): Lift {
   };
 }
 
-/** The four lifts that carried the session, heaviest total first. */
-function topLifts(workout: Workout): Lift[] {
+/** Every lift of the session, heaviest total first; the card shows four, the expanded card all of them. */
+function liftsByVolume(workout: Workout): Lift[] {
   return [...setsByExercise(workout)]
     .map(([title, sets]) => liftOf(title, sets))
-    .sort((a, b) => b.volumeKg - a.volumeKg)
-    .slice(0, TOP_LIFTS);
+    .sort((a, b) => b.volumeKg - a.volumeKg);
 }
 
 function lastWorkoutOf(recent: Workout[]): LastWorkout | null {
   const last = recent[0];
   if (!last) return null;
-  return { title: last.title, at: last.start_time, lifts: topLifts(last) };
+  return { title: last.title, at: last.start_time, lifts: liftsByVolume(last) };
 }
 
+/** By the routine the workout was started from, or by name: Hevy titles a workout after its routine. */
 function sessionIndexOf(block: Block, workout: Workout): number {
-  if (!workout.routine_id) return -1;
-  return block.sessions.findIndex((session) => session.hevyRoutineId === workout.routine_id);
+  return block.sessions.findIndex(
+    (session) => (Boolean(workout.routine_id) && session.hevyRoutineId === workout.routine_id) || session.name === workout.title,
+  );
 }
 
 /** The session after the last one they actually ran; the first session when nothing in the window matches. */
@@ -261,7 +259,7 @@ function nextSessionOf(block: Block | null, recent: Workout[]): NextSession | nu
   const session = block.sessions[ran === undefined ? 0 : (ran + 1) % block.sessions.length];
   return {
     name: session.name,
-    exercises: session.exercises.slice(0, NEXT_SESSION_EXERCISES).map((exercise) => exercise.title),
+    exercises: session.exercises.map((exercise) => exercise.title),
   };
 }
 
@@ -272,4 +270,12 @@ export function cardsView(block: Block | null, recent: Workout[], now: Date): Ca
     lastWorkout: lastWorkoutOf(recent),
     nextSession: nextSessionOf(block, recent),
   };
+}
+
+/** The bubble the thread shows the moment a workout arrives; the app draws the wait for the review under it. */
+export function workoutLoggedLine(workout: Workout): string {
+  const minutes = Math.round((Date.parse(workout.end_time) - startedAt(workout)) / MS_PER_MINUTE);
+  const count = workout.exercises.length;
+  const length = Number.isFinite(minutes) && minutes > 0 ? `, ${minutes} min` : '';
+  return `**Workout logged**\n- ${workout.title}: ${count} exercise${count === 1 ? '' : 's'}${length}`;
 }

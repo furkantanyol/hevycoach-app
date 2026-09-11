@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { programInput } from './coach.js';
+import { programInput } from './plan.js';
 import type { Profile } from './state.js';
 
 const REASON = 'intake answered';

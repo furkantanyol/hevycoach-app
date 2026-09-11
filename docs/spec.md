@@ -17,7 +17,7 @@ hevycoach-app/                 pnpm workspace, hoisted linker
     src/routes.ts              GET /health, GET /messages, POST /messages, POST /device, POST /webhook/hevy
     src/coach.ts               Anthropic calls: chat turn (streaming, one tool), plan, verdict
     src/prompt.ts              the system prompt and the untrusted-input wrapper
-    src/hevy.ts                history summary, template catalogue, routine writes (via @furkantanyol/hevy-client)
+    src/hevy.ts                history summary, template catalogue, routine writes (via hevy-sdk)
     src/guard.ts               number bounds for a planned block
     src/state.ts               load/save server/data/state.json
     src/push.ts                Expo push send
@@ -39,7 +39,7 @@ hevycoach-app/                 pnpm workspace, hoisted linker
 
 ## Server
 
-Node 24, TypeScript strict, ESM. Fastify 5, `@anthropic-ai/sdk`, `@furkantanyol/hevy-client@1.0.0`, `expo-server-sdk`, `vitest`, `tsx` for dev. Port 3001 (3000 is taken by another dev server on the owner's Mac).
+Node 24, TypeScript strict, ESM. Fastify 5, `@anthropic-ai/sdk`, `hevy-sdk@1.0.0`, `expo-server-sdk`, `vitest`, `tsx` for dev. Port 3001 (3000 is taken by another dev server on the owner's Mac).
 
 ### Env (`server/.env`, gitignored; `server/.env.example` committed)
 
@@ -234,3 +234,118 @@ Approved by the owner after reviewing Hevy's own widget and the plan message. Su
 ### Dependencies added at the root
 
 `@expo/ui`, `expo-glass-effect`, `expo-linear-gradient`, `react-native-pager-view` (Expo-pinned), `@ronradtke/react-native-markdown-display`. Native rebuild required.
+
+## Amendment 2026-09-10 23:30: a card opens into its details
+
+Owner's brief: "when a carousel card is tapped, with animation it should come up to the front as bigger and show the whole details of that carousel item, like a modal".
+
+- Every carousel card is a button. A tap brings the card to the front: it keeps its top edge and width, grows to fit its content over a dimmed screen (a spring of about 400 ms, no bounce; a crossfade under Reduce Motion) and turns from glass to the card colour so the rows read. Tap outside or the close button and it shrinks back (`onRequestClose` covers the accessibility escape gesture; there is no swipe to dismiss). A card with nothing to show yet (loading, no workout, no block) does not open.
+- What the expanded card shows: week volume as one row per day (name, bar, kilograms); the last workout's every lift with sets × reps × kg and its volume; the next session's every exercise, numbered, and the "Open it in Hevy" line.
+- `GET /cards` therefore carries every lift of the last workout (still heaviest total first) and every exercise title of the next session. The compact card keeps showing the first four and says "+N more".
+- Icons: the disclosure chevron and the close cross are SF Symbols drawn by `@expo/ui` inside the carousel, the one place the app hosts SwiftUI.
+
+## Amendment 2026-09-11 01:05: the history picks the intake script
+
+Owner: "it doesn't make sense if it asks if logging or new when it read 276 workouts". The opener no longer asks "New to Hevy, or been logging for a while?". `GET /messages` reads the history and decides: ten or more logged workouts run the existing script (goals first, years and equipment read off Hevy, bodyweight confirmed); fewer run the new-to-Hevy script (years first). The welcome says what was read: "I've read your 276 workouts. A few questions, …", "I've read your 2 workouts, too few to read your habits from yet, so a few questions first, …", or "Nothing is logged yet, so a few questions first, …". The `start` step, its pills and its model task are gone.
+
+## Amendment 2026-09-11 08:05: Hevy's styling, exactly
+
+Owner, on the outlined light-mode screen: "it's not elegant though, let's use the same styling as Hevy." The screen drops everything Hevy does not have: no gradient wash, no Liquid Glass, no outlines on surfaces.
+
+- Ground: the plain theme background (#FFFFFF light, #0C0C0C dark). Header: a native large title "Coach" on that ground, no hairline, like Hevy's "Workout".
+- Cards: the card colour with a one-point border in the hairline token (#E9EAEC / #26272B), sixteen-point corners and padding — Hevy's routine card. The expanded card is the same shell, so it no longer fades from glass to solid.
+- Coach bubbles, pills, the composer and the number field: Hevy's grey fill (#F4F5F8 / #1C1D21), no border.
+- `expo-glass-effect` and `expo-linear-gradient` are no longer imported; they stay installed until the next prebuild removes them.
+
+## Amendment 2026-09-11 08:30: journey question, status lines, motion, loading
+
+Owner, 08:09: four asks — smooth chat motion with react-native-reanimated, the coach saying what it is doing while it works, an opening question about starting new or continuing, and a loading state on the cards. Owner, 08:20: Continue means the coach reviews the routines behind the recent workouts and builds the next block on them, asking only goals, injuries and bodyweight.
+
+- **Opener with a history (ten workouts or more).** "I've read your N workouts." then "Start a new journey, or continue the one you're on? I'll review it and build from there." Pills: Start new (value `existing`) → the existing script (goals, days, injuries, bodyweight); Continue (value `continue`) → goals, injuries, bodyweight, with days a week read from the history. Typed answers are interpreted like every other step. Under ten workouts nothing changes: the new-to-Hevy script opens on the years question.
+- **Continue path.** `GET /routines/{id}` for the distinct routines behind the last 30 workouts (at most six, newest first; a deleted one is skipped). The plan task gains a "## Current routines" section (title, id, each exercise with its working sets as reps x kg) and one instruction: keep their structure and exercise selection where it still serves the profile, progress the loads from the history, change only what the analysis justifies and say why. The block's reason is "Continuing the routines the athlete already runs". Everything still lands in the HevyCoach folder.
+- **Status lines.** While a turn works the stream carries lines of the form `\u001E<text>\n` ("Thinking", "Reading your workouts", "Reading your routines", "Matching exercises", "Writing your block", "Saving routines to Hevy"). The last one repeats every 15 s as the keep-alive (replacing the dots). The app shows the latest beside the typing dots as `<text>…` and drops the lines from the message; the server never saves them. The scripted branches (intake, proposals) stream them too, so the intake's plan no longer sits silent behind the proxy.
+- **Motion.** `react-native-reanimated` (with `react-native-worklets`) is added to the dependency list for this: new bubbles fade in from just below their place (220 ms), the pill row fades in and out (220 / 140 ms) with a layout transition, the tapped pill presses to 96% on a quick spring, the typing dots pulse on the UI thread, and the thread's follow scroll is animated. The history loads without entering animations.
+- **Cards.** While `GET /cards` is in flight each page shows a centred spinner instead of the em dash, and does not open.
+
+## Amendment 2026-09-11 10:30: the plan in two phases, the block as cards
+
+Owner, 10:18: the wait after the last answer is long and silent, and the plan lands as a wall of bullets. Brainstormed and approved 10:25.
+
+- **Two phases.** `runProgram` first streams the coach's read of the athlete — a small text call to the plan model (`readRequest`, no tools, ~400 tokens): where they stand in numbers, the one thing that matters, what the block will do, three to five plain lines — word by word into the thread. Then it writes the block as before, with the read handed to the plan task ("the block keeps its word") and the schema's `analysis` reduced to one or two lines for this week. The statuses cover the second phase; the read is already on screen.
+- **The plan message.** Text = the read, a blank line, the week's lines (the new-to-Hevy script still adds its "log your sessions" line). The routine-names line is gone from the text. The message carries `block` (name, weeks, sessions with exercises: title, sets, reps, weightKg, rpe) on both the intake and the chat path.
+- **Cards.** Under a plan bubble the app draws one Hevy routine card per session across the thread's width: the name and a grey line of its exercises; a tap grows it in place, like a carousel card, to the numbered exercises with "sets × reps × kg · RPE"; one caption closes the list: "Open them in Hevy → Routines → HevyCoach". The typing dots and the status now sit under whatever has streamed, so the block's statuses stay visible below the read.
+- **Streaming.** The scripted branches speak through a reporter (`status`, `say`) on the same text/plain stream as the chat turn; the question a script asks next is streamed too, and the route no longer re-sends the last coach message.
+
+## Amendment 2026-09-11 11:20: bodyweight is typed in the chat
+
+Owner: "just use the chat instead of generating an input. KISS."
+
+- The inline numeric field is gone, and with it the `input` field on messages (`MessageInput`) and the `input` key in `metadata.custom`. A coach message with no pills is answered in the composer like any other typed reply.
+- The two typed questions name the unit: "What do you weigh, in kilograms?" when there is no measurement to confirm, and "What is it now, in kilograms?" after "It changed". The typed reply goes through the same interpreter as before.
+
+## Amendment 2026-09-11 11:30: a closing question
+
+Owner: after the questions there should be a last "anything else?" the athlete types into, and it has to be taken into account.
+
+- Every script ends, after the bodyweight, on one open question: "Anything else I should know before I write your block?" with a single pill, "Nothing to add". A typed reply is kept as written — trimmed, on its own line after whatever the typed injury answer already noted, within the notes cap — in `profile.notes`, which the read and the plan tasks already carry as "Notes: …". No model call reads it. `notes` joins `INTAKE_STEPS` and the end of every path.
+
+## Amendment 2026-09-11 11:45: multi-select pills, the loop is gone
+
+Owner: "what are you training for should be multi select instead of recurring questions."
+
+- The multi shape from the 18:00 spec is back: `Message.multi?: true` marks a question whose pills toggle; one "Done" pill (the accent) sends `{ text: labels joined by ", ", choice: values[] }`; picked pills sit on the accent at 15%. `Choice.exclusive?: true` marks a pill that answers by itself — "Nothing" on the injuries — which sends at once. Goals and injuries are `multi`; every other question still sends on the tap.
+- The "<Label>, noted. Anything else?" loop, its "No, that's it" pill (`done`) and the narrowing of pills are deleted. A typed multi answer is saved in one go as well: "left shoulder, landmine is fine" moves the script on with `shoulder` and the words in the notes. A typed goals reply that names no goal is re-asked with the one-line "I did not catch that."
+
+## Amendment 2026-09-11 12:05: the first live webhook deliveries, and six owner notes from the fresh run
+
+- **Webhook.** Hevy delivered three times at 11:57–11:59 for a workout the owner finished and then deleted; every delivery got 400 from `deliveryOf`, and the "first delivery" log never fired because the rehearsal event ids already sat in `seenEvents`. Now every delivery is logged whole (headers without secrets, body) before validation, a rejected one again at warn, and the parser reads the ids wherever they plausibly sit: a numeric `id`, `eventId`/`event_id`, `payload` as an object or a JSON string, `data`, a flat body, `workoutId` or `workout_id`. The real contract is still to be recorded from the next delivery.
+- **Folder.** Routines live in the folder "hevy-coach" (was "HevyCoach"); an update passes `folder_id` too, so the routines the state already tracks move into it on the next write. Whatever the old folder still holds is the owner's to delete in Hevy.
+- **Multi-select hint.** "Select all that apply" in the secondary colour above a `multi` question's pills.
+- **Landing.** The thread's first layout with messages is the landing (a jump); every later growth slides, including the first time a short thread outgrows the screen — that jump read as "an app refresh" after a tap.
+- **Typing dots.** An assistant text part that has streamed nothing yet renders nothing, so the dots stand alone in the bubble without an empty line above them.
+- **Keyboard.** One `useAnimatedKeyboard` signal at the screen root: the carousel folds away in step with the keyboard (flex 1 → 0 over the first 120 pt, opacity over the first 60) and the thread pane pads its bottom by the keyboard height less the home-indicator inset, so the composer rides on the keyboard. The `KeyboardAvoidingView` inside the thread is gone: it measured its frame relative to the pane, not the screen, and computed no overlap (owner, 12:26: the composer sat behind the keyboard).
+- **Cards.** After every finished turn the app's GETs read again (`serverChanged`), so a new block's next session shows in the carousel without a relaunch.
+- **Bubble text.** The assistant text's line height is 22 (was 25): with 25 the New Architecture reserved the last line of a long paragraph but never painted it, clipping the plan's closing sentence at the bubble edge (seen twice live; neither the markdown paragraph layout nor the letter spacing was the cause, an explicit line height far above the font's own was).
+- **Webhook, recorded (12:35).** The live body is `{"workoutId":"<uuid>"}` and nothing else — no event id — so `deliveryOf` takes the workout id as the dedupe key when no id is sent. Contract in `docs/hevy-webhook-delivery.md`.
+- **Thread watch (12:40).** Owner: the review should also update Last and Next. The app has no push on the simulator, so while the thread is idle (no run, no draft) it reads `GET /messages` every 15 s and on every return to the foreground; one more message on the server than on screen remounts the thread onto the fresh history and refetches the cards. A run or a draft postpones the check.
+- **Following (12:45).** Owner: a new message is sometimes clipped under the composer. Bottom-tracking now reads only the reader's own scrolling — a drag, and the momentum it hands off to (`onScrollBeginDrag` arms it) — because the animated follow scroll ends in `onMomentumScrollEnd` as well, mid-stream at a stale offset, and reading that stopped the following, so the pills mounting after the bubble landed under the composer.\n- **Routine ids (12:55).** The block written at 12:48 saved with `null` routine ids while Hevy held the two new routines, so the Next card matched nothing (Last and Next showed the same session) and the next plan would have created duplicates. `writeRoutines` now recovers a missing id from the folder by title after writing, and the cards match a workout to a session by routine id or by name (Hevy titles a workout after its routine). The live block's ids were repaired from Hevy by hand.\n
+
+## Amendment 2026-09-11 13:00: the voice, and the folder "Hevy Coach"
+
+Owner: "the texts are too long and ai slop. They need to be extremely clear with rich text, lists and bold, to the point, no long paragraphs, no double dash or ai words."
+
+- **One style rule**, `STYLE_RULES` in `prompt.ts`, quoted by the system prompt's Voice section and by every task: one line per bullet, under 14 words, numbers over adjectives, no paragraph longer than two sentences, never the em or en dash character (a comma, a full stop, or "to" between numbers), no filler words, no emoji.
+- **The read** is markdown with three bold headings and bullets: **Where you stand** (two or three bullets of numbers), **What matters most** (one), **What the block does** (one, no exercises or loads yet). **This week** is a bold heading with two bullets. The review keeps its headings, bullets now one line each, the question one plain line. A chat reply is at most five lines, bullets when there are two or more points.
+- **Folder.** Routines are written into "Hevy Coach" (was "hevy-coach" since 11:58); an update carries the folder id, so the two tracked routines move on the next write.
+- **Live markdown (13:10).** Owner, seeing asterisks while the read streamed: the assistant text part now renders markdown from the first chunk, holding back an unpaired `**` and a bare bullet dash at the end of the chunk until their pair or text arrives (the web MarkdownText element's behaviour). Plain-text streaming is gone.
+- **A tracked routine that is gone (13:15).** The owner deleted the old folders in Hevy, which deleted the routines in them; the next plan's update got "Routine not found" and the block was not written. `writeRoutines` now creates a routine anew when the update of a tracked id returns 404.
+- **Bubble width (13:25).** A coach message with a line break stretches its bubble to the 85% cap; a one-liner still shrink-wraps. Inside a shrink-wrapped bubble the markdown library's list text (zero flex basis) and paragraphs (100% width) collapsed the bubble to its widest heading while the lines were measured wide, so the text overflowed and the session cards drew over it.
+- **Workout logged (13:40).** Owner: something in the app when the webhook gets a workout. The moment the workout is fetched the server posts `**Workout logged**` with the title, exercise count and minutes and "Reviewing it now"; the review follows as its own message. The app's idle poll is 10 s, so the bubble shows before the review lands.
+
+## Amendment 2026-09-11 14:05: the coach types, and the app is told instead of asking
+
+Owner: "Just typing instead of waiting a lot of seconds. Don't do workarounds, use the utilities set by the standards of the libraries." And: the carousel should fetch after a webhook is handled, not poll.
+
+- **Typing.** The assistant text part runs through `useSmooth`, assistant-ui's own typewriter reveal, brought over from `@assistant-ui/react` because `@assistant-ui/react-native` 0.1.40 ships none: the library's `TextStreamAnimator` on requestAnimationFrame, the buffered text draining within 250 ms and never faster than 5 ms a character, an immediate commit when the source settles before a frame ran, and Reduce Motion showing the text whole. The 13:10 hold-back of unfinished markers is gone. Measured beforehand through the tunnel: a chat reply arrives as 17 chunks over 1.9 s after a 5.7 s first token; the reveal is what makes those chunks read as typing.
+- **Events.** `GET /events` is a server-sent event stream: `event: thread` with the thread's length as data, sent on connect and after every save (`save` in `index.ts` announces it), a keep-alive comment every 15 s. The app keeps one open (Expo's streaming fetch), reconnects 3 s after it drops, and reloads the thread and cards when the server's length exceeds what is on screen — while idle, else once idle. The 10 s poll of 13:40 is gone.
+- **In place (14:10).** Owner: the chat went blank for a couple of seconds when the workout-logged event arrived. That was the remount reloading the history over the tunnel; the event now imports the fresh history into the running thread (`thread.import`, the runtime call its history adapter feeds), so nothing disappears and the new bubble slides in. The remount stays only for a notification tap.
+
+## Amendment 2026-09-11 14:30: the send button sends the picks
+
+Owner: "either make done button at the right end or use the send message button"; agreed on the send button, "simple is best".
+
+- The "Done" pill is gone. Picking pills on a `multi` question writes their labels, joined by ", ", into the composer's field (a small shared store, `src/lib/selection.ts`, keeps the values); the composer's arrow, blue as soon as the field has text, posts `{ text: labels, choice: values[] }` when the field still shows exactly those labels, and sends the typed text otherwise. "Nothing" still sends on its tap. The hint reads "Select all that apply, then send".
+
+## Amendment 2026-09-11 14:40: the wait is its own bubble, the reveal is slower, the read is quicker
+
+Owner: "should we also show thinking or not? still big wait. the text comes more like a blurt. writing your block should be separate bubble."
+
+- **No thinking on screen**: a coach does not narrate; the status line stays. The wait is the model's first token, so the read runs at `effort: low` — it formats numbers the history already holds.
+- **Reveal**: `useSmooth` with the library's own options, `drainMs: 1500, maxCharIntervalMs: 12`, so a burst types out over about a second and a half instead of the default quarter second.
+- **Bubbles**: the stream parser opens a new text part when a status arrives after words are already on screen (the plan's read, then the block's lines); the app draws one bubble per text part and the typing dots in a bubble of their own, so "Writing your block…" sits under the read rather than inside it. The plan stays one saved message: two saved would leave the server a message ahead of the app after the turn, and the app would re-import the thread (seen 14:50 as a visible reload). A reload draws the read and the week's lines in one bubble.
+- **Watch and loading (14:55).** The thread watch ignores events while the runtime is still loading the history (`thread.isLoading`): the first event used to import the history a second time on every launch, a flicker the owner read as the app restarting.
+- **Reviewing it now as a wait (15:00).** Owner: the review's wait should be its own loading bubble too. The workout-logged message carries `kind: 'logged'` and no longer says "Reviewing it now" in its text; while it is the newest message the app draws the typing bubble with "Reviewing it now…" under it, and the review's arrival ends it. A review that fails after the announcement posts "I could not review that workout just now." so the wait ends either way.
+
+## Amendment 2026-09-11 15:15: the working name is Coach
+
+"Hevy Coach" is Hevy's own coaching product (hevycoach.com), so the app's title, the routine folder in Hevy, the cards' caption and the README use the working name "Coach". One constant each: `SCREEN_TITLE` in `src/app/index.tsx`, `ROUTINE_FOLDER` in `server/src/hevy.ts`, `OPEN_IN_HEVY` in `src/components/assistant-ui/plan-cards.tsx`. The next plan write creates the "Coach" folder and moves the tracked routines into it; the old folder is the owner's to delete.

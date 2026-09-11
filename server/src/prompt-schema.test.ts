@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CREATE_PROGRAM_TOOL, PLAN_OUTPUT_SCHEMA } from './prompt.js';
+import { CREATE_PROGRAM_TOOL, PLAN_OUTPUT_SCHEMA } from './plan-prompt.js';
 import { REVIEW_OUTPUT_SCHEMA, reviewTask } from './review-prompt.js';
 import { EQUIPMENT, GOALS, INJURIES, YEARS_TRAINING, type Profile } from './state.js';
 

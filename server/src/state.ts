@@ -92,16 +92,11 @@ export interface Block {
   reason: string;
 }
 
-/** One pill under the last coach message: the label is shown, the value is sent back. */
+/** One pill under the last coach message: the label is shown, the value is sent back. An exclusive pill answers a multi-select question by itself. */
 export interface Choice {
   label: string;
   value: string;
-}
-
-/** A coach message that asks for a number instead of offering pills; the app renders a field with the unit. */
-export interface MessageInput {
-  kind: 'bodyweight';
-  unit: 'kg';
+  exclusive?: true;
 }
 
 export interface Message {
@@ -109,10 +104,11 @@ export interface Message {
   role: 'user' | 'assistant';
   text: string;
   createdAt: string;
-  kind?: 'plan' | 'review';
+  /** `logged`: the workout has arrived and its review is being written; the app shows the wait under it. */
+  kind?: 'plan' | 'review' | 'logged';
   choices?: Choice[];
-  /** Offered instead of choices: the app renders a numeric field and sends what was typed as the text. */
-  input?: MessageInput;
+  /** The pills toggle and one "Done" sends them together, so the choice comes back as a list. */
+  multi?: true;
   /** Snapshot of the block this turn wrote; set on plan messages. */
   block?: Block;
   /** Name of the block session the workout matched; set on review messages. */
@@ -121,7 +117,7 @@ export interface Message {
 
 /** Exported like the other option lists: the app labels a step, and the type is derived from it. */
 export const INTAKE_STEPS = [
-  'start',
+  'journey',
   'yearsTraining',
   'daysPerWeek',
   'equipment',
@@ -129,12 +125,23 @@ export const INTAKE_STEPS = [
   'injuries',
   'bodyweight',
   'bodyweightValue',
+  'notes',
 ] as const;
 
 export type IntakeStep = (typeof INTAKE_STEPS)[number];
 
-/** The opener branches the script: someone new to Hevy has no history to read the answers off. */
-export const INTAKE_PATHS = ['existing', 'new'] as const;
+const isIntakeStep = (value: unknown): value is IntakeStep => INTAKE_STEPS.some((step) => step === value);
+
+/** An intake saved while waiting on a step that no longer exists would throw on every reply; it is dropped instead. */
+const currentIntake = (intake: IntakeState | null | undefined): IntakeState | null =>
+  intake && isIntakeStep(intake.step) ? intake : null;
+
+/**
+ * The history picks the script: fewer than ten logged workouts run the new-to-Hevy branch, which asks
+ * what the history cannot answer. With a history the opener asks one question instead — a fresh block
+ * (existing) or a block that continues the routines they already run (continue), which asks least.
+ */
+export const INTAKE_PATHS = ['existing', 'new', 'continue'] as const;
 
 export type IntakePath = (typeof INTAKE_PATHS)[number];
 
@@ -142,7 +149,7 @@ export type IntakePath = (typeof INTAKE_PATHS)[number];
 export interface IntakeState {
   step: IntakeStep;
   answers: Partial<Profile>;
-  /** Which branch is running; absent until the opener is answered, and read as the existing path until then. */
+  /** Which branch is running; absent in a script saved before the branch existed, read as the existing path. */
   path?: IntakePath;
 }
 
@@ -205,7 +212,7 @@ export async function loadState(path: string = DEFAULT_STATE_PATH): Promise<Stat
       ...saved,
       profile: isProfile(saved.profile) ? saved.profile : null,
       messages: (saved.messages ?? []).map(asReview),
-      intake: saved.intake ?? null,
+      intake: currentIntake(saved.intake),
       pendingProposal: saved.pendingProposal ?? null,
     };
   } catch (error) {

@@ -1,74 +1,55 @@
 /**
- * The one screen: one wash behind everything, the card carousel over the top
- * third, the thread and its composer under it. No gate and no redirect — the
- * server posts the opener, so the first launch and the thousandth open the
- * same way.
- *
- * The wash is the screen's ground, not the carousel's. It starts at the accent
- * under the status bar, thins through the cards and is the plain theme
- * background by the time the first bubbles arrive, so nothing between the
- * header and the composer draws an edge and the screen reads as one surface.
- *
- * The header is transparent (src/app/_layout.tsx) so the wash runs behind it
- * unbroken; that also means the screen is laid out from the top of the display,
- * so the header's own height is added back as padding here. The wash is
- * absolutely positioned with all four insets, which Yoga measures from the
- * border box, so that padding does not push it down.
+ * The one screen: Hevy's large title, the card carousel over the top third,
+ * the thread and its composer under it, all on the theme's plain ground the way
+ * Hevy's screens sit on white. No gate and no redirect — the server posts the
+ * opener, so the first launch and the thousandth open the same way.
  */
 import { AssistantRuntimeProvider, useLocalRuntime } from '@assistant-ui/react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, Text } from 'react-native';
+import Animated, { Extrapolation, interpolate, useAnimatedKeyboard, useAnimatedStyle } from 'react-native-reanimated';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { coachChatAdapter, coachHistoryAdapter } from '../coach-adapter';
 import { Thread } from '../components/assistant-ui/thread.aui';
-import { useTheme } from '../components/assistant-ui/theme';
+import { Spacing, useTheme } from '../components/assistant-ui/theme';
 import { Carousel } from '../components/cards/carousel';
-import { wash } from '../lib/color';
 import { useReloadCount } from '../lib/reload';
 
-/** The accent at the top of the display, halved by the middle, gone by the tail. */
-const WASH_TOP_ALPHA = 0.14;
-const WASH_MID_ALPHA = 0.06;
-/** Where the four stops sit down the screen: full, thinned, ground, ground. */
-const WASH_STOPS = [0, 0.4, 0.7, 1] as const;
+/** Working name: "Hevy Coach" is Hevy's own coaching product, so this personal tool does not borrow it. */
+const SCREEN_TITLE = 'Coach';
+/** The cards are folded away once the keyboard has risen this far, and faded over the first half of it. */
+const KEYBOARD_COLLAPSE_PT = 120;
+
 /**
- * The portrait height of the iOS navigation bar, added to the status bar inset
- * to clear the transparent header. `useHeaderHeight()` would be the measured
- * figure, but `@react-navigation/elements` is not a package in this install —
- * expo-router vendors it under `build/react-navigation/elements` — and reaching
- * into another package's build output for one number is not worth it.
+ * One keyboard signal, read at the screen root, moves two things in step with it: the carousel gives
+ * its third of the screen to the thread, and the thread pads its bottom so the composer rides on the
+ * keyboard. A `KeyboardAvoidingView` inside the thread pane cannot do the second: it measures its
+ * frame relative to the pane, not the screen, and so computed no overlap at all. The safe-area view
+ * already pads the home-indicator inset, which the keyboard's height includes, so that much comes off.
  */
-const HEADER_BAR_HEIGHT = 44;
-
-/** Behind everything and untouchable: one ground from the top of the display down. */
-function ScreenWash() {
-  const { colors } = useTheme();
-
-  return (
-    <LinearGradient
-      colors={[
-        wash(colors.accent, WASH_TOP_ALPHA),
-        wash(colors.accent, WASH_MID_ALPHA),
-        colors.background,
-        colors.background,
-      ]}
-      locations={WASH_STOPS}
-      start={{ x: 0.5, y: 0 }}
-      end={{ x: 0.5, y: 1 }}
-      style={StyleSheet.absoluteFill}
-      pointerEvents="none"
-    />
-  );
+function useKeyboardStyles() {
+  const keyboard = useAnimatedKeyboard();
+  const { bottom } = useSafeAreaInsets();
+  const cards = useAnimatedStyle(() => {
+    const height = keyboard.height.get();
+    return {
+      flex: interpolate(height, [0, KEYBOARD_COLLAPSE_PT], [1, 0], Extrapolation.CLAMP),
+      opacity: interpolate(height, [0, KEYBOARD_COLLAPSE_PT / 2], [1, 0], Extrapolation.CLAMP),
+    };
+  });
+  const thread = useAnimatedStyle(() => ({ paddingBottom: Math.max(keyboard.height.get() - bottom, 0) }));
+  return { cards, thread };
 }
 
 /**
  * Keyed on the reload counter: a fresh key is a fresh runtime, which is the
  * only way history is read again (`useLocalRuntime` loads it once and reports
  * `refetchThread: false`). A remount aborts a streaming reply and drops an
- * unsent draft, so only a notification tap asks for one (src/lib/reload.ts) —
- * never a return to the foreground, which happens on every Control Centre
- * swipe, permission prompt and incoming call.
+ * unsent draft, so only a notification tap (src/lib/reload.ts) or the thread
+ * watch finding a message the server added on its own, while nothing runs and
+ * no draft is typed (src/lib/thread-watch.ts), asks for one — never a bare
+ * return to the foreground, which happens on every Control Centre swipe,
+ * permission prompt and incoming call.
  */
 function CoachThread() {
   const runtime = useLocalRuntime(coachChatAdapter, {
@@ -85,22 +66,23 @@ function CoachThread() {
 export default function Index() {
   const { colors } = useTheme();
   const threadKey = useReloadCount();
-  const insets = useSafeAreaInsets();
-
-  const ground = {
-    backgroundColor: colors.background,
-    paddingTop: insets.top + HEADER_BAR_HEIGHT,
-  };
+  const { cards: cardsStyle, thread: threadStyle } = useKeyboardStyles();
 
   return (
-    <SafeAreaView style={[styles.screen, ground]} edges={['bottom']}>
-      <ScreenWash />
-      <View style={styles.cards}>
+    <SafeAreaView style={[styles.screen, { backgroundColor: colors.background }]}>
+      <Text
+        accessibilityRole="header"
+        style={[styles.title, { color: colors.foreground }]}
+        numberOfLines={1}
+      >
+        {SCREEN_TITLE}
+      </Text>
+      <Animated.View style={[styles.cards, cardsStyle]}>
         <Carousel />
-      </View>
-      <View style={styles.thread}>
+      </Animated.View>
+      <Animated.View style={[styles.thread, threadStyle]}>
         <CoachThread key={threadKey} />
-      </View>
+      </Animated.View>
     </SafeAreaView>
   );
 }
@@ -109,8 +91,18 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
   },
+  // Hevy's large title: 34/700, flush under the status bar, on the gutter.
+  title: {
+    fontSize: 34,
+    fontWeight: '700',
+    letterSpacing: -0.4,
+    paddingHorizontal: Spacing.gutter,
+    paddingTop: 4,
+    paddingBottom: 8,
+  },
   cards: {
     flex: 1,
+    overflow: 'hidden',
   },
   thread: {
     flex: 2,

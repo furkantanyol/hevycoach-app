@@ -1,4 +1,4 @@
-import type { Workout, WorkoutExercise, WorkoutSet } from '@furkantanyol/hevy-client';
+import type { Workout, WorkoutExercise, WorkoutSet } from 'hevy-sdk';
 import { describe, expect, it } from 'vitest';
 import { cardsView, type DayLabel, type DayVolume } from './derived.js';
 import type { Block, Exercise, Session } from './state.js';
@@ -170,7 +170,7 @@ describe('cardsView last workout', () => {
     expect(view.lastWorkout?.lifts.map((lift) => lift.title)).toEqual(['Squat (Barbell)']);
   });
 
-  it('should keep the four lifts with the most volume, heaviest first', () => {
+  it('should list every lift, heaviest total first', () => {
     const exercises = [
       tenReps('Bicep Curl (Dumbbell)', 10, 0),
       tenReps('Seated Row (Cable)', 40, 1),
@@ -186,6 +186,7 @@ describe('cardsView last workout', () => {
       'Bench Press (Barbell)',
       'Seated Row (Cable)',
       'Overhead Press (Barbell)',
+      'Bicep Curl (Dumbbell)',
     ]);
   });
 });
@@ -217,12 +218,22 @@ describe('cardsView next session', () => {
     expect(view.nextSession?.name).toBe('1 Push');
   });
 
-  it('should list the first four exercises of that session', () => {
+  it('should list every exercise of that session', () => {
     const titles = ['Squat', 'Romanian Deadlift', 'Leg Press', 'Leg Curl', 'Calf Raise'];
     const heavy = session('1 Lower', 'r-lower', titles.map(planned));
 
     const view = cardsView(blockOf(heavy), [workout(daysAgo(1), [])], NOW);
 
-    expect(view.nextSession?.exercises).toEqual(['Squat', 'Romanian Deadlift', 'Leg Press', 'Leg Curl']);
+    expect(view.nextSession?.exercises).toEqual(titles);
+  });
+});
+
+describe('nextSession, matched by title', () => {
+  it('should step past the session whose name the last workout carries when the block holds other routine ids', () => {
+    const block = blockOf(session('1 Push', 'r-old-push'), session('2 Pull', 'r-old-pull'));
+
+    const view = cardsView(block, [{ ...workout(daysAgo(1), []), title: '1 Push' }], NOW);
+
+    expect(view.nextSession?.name).toBe('2 Pull');
   });
 });

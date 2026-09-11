@@ -1,8 +1,6 @@
-import { ThreadPrimitive, type ThreadMessage } from '@assistant-ui/react-native';
+import { ThreadPrimitive, type ThreadMessage, useAuiState } from '@assistant-ui/react-native';
 import { useRef } from 'react';
 import {
-  KeyboardAvoidingView,
-  Platform,
   StyleSheet,
   View,
   type FlatList,
@@ -10,6 +8,10 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from 'react-native';
+
+import { LayoutAnimationConfig } from 'react-native-reanimated';
+
+import { useThreadWatch } from '../../lib/thread-watch';
 
 import { Composer } from './composer';
 import { MessageBubble } from './message';
@@ -23,6 +25,8 @@ import { Spacing } from './theme';
 const COMPOSER_BOTTOM_GAP = 8;
 /** This far from the end still counts as the bottom, so the thread keeps following new messages. */
 const AT_BOTTOM_SLACK = 24;
+/** Below this, a released drag has no momentum and `onMomentumScrollEnd` will not follow it. */
+const FLING_VELOCITY = 0.01;
 
 /**
  * `MessagesFlatList` feeds `FlatList` the thread oldest-first and maps each row
@@ -47,51 +51,81 @@ const AT_BOTTOM_SLACK = 24;
  * `keyboardShouldPersistTaps="handled"` is what lets the first tap on a pill or
  * on the number field's Send button count: without it the open keyboard eats it.
  *
- * Nothing in here paints a ground. The screen's wash is still fading out where
- * the thread begins (src/app/index.tsx), so the list and the view holding it
- * stay transparent and the tail of it shows behind the first bubbles; the
- * bubbles, the pills and the composer keep their own fills.
+ * `LayoutAnimationConfig skipEntering` keeps the history from fading in bubble
+ * by bubble on open; only messages that arrive afterwards animate. The follow
+ * scroll is animated for the same reason: a new bubble slides the thread up
+ * instead of snapping it, while the first landing on the history still jumps.
+ *
+ * Nothing in here paints a ground: the screen's plain ground (src/app/index.tsx)
+ * shows through the list and the view holding it; the bubbles, the pills and the
+ * composer keep Hevy's grey fill.
  */
 export function Thread() {
   const list = useRef<FlatList<ThreadMessage>>(null);
   const viewportHeight = useRef(0);
   const atBottom = useRef(true);
+  const landed = useRef(false);
+  const hasMessages = useAuiState((s) => s.thread.messages.length > 0);
+  useThreadWatch();
 
   const readViewport = (event: LayoutChangeEvent) => {
     viewportHeight.current = event.nativeEvent.layout.height;
   };
 
+  // Only the reader's own scrolling can mean "scrolled away": a drag, and the momentum it hands off
+  // to. The animated follow scroll ends in `onMomentumScrollEnd` too — mid-stream, at an offset the
+  // next chunk has already outgrown — and reading that would stop the following for good.
+  const dragging = useRef(false);
   const trackBottom = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
     atBottom.current = contentSize.height - contentOffset.y - layoutMeasurement.height <= AT_BOTTOM_SLACK;
   };
+  const startDrag = () => {
+    dragging.current = true;
+  };
+  const endDrag = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    trackBottom(event);
+    // No fling, no momentum to wait for; a fling reports its final position in `endMomentum`.
+    if (Math.abs(event.nativeEvent.velocity?.y ?? 0) < FLING_VELOCITY) dragging.current = false;
+  };
+  const endMomentum = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    if (!dragging.current) return;
+    dragging.current = false;
+    trackBottom(event);
+  };
 
+  // The first layout with messages on it is the landing and jumps to the newest; every growth after
+  // that slides the thread up, including the first time a short thread outgrows the screen.
   const followEnd = (_width: number, height: number) => {
-    if (!atBottom.current || viewportHeight.current === 0) return;
-    list.current?.scrollToOffset({ offset: Math.max(0, height - viewportHeight.current), animated: false });
+    if (!hasMessages || !atBottom.current || viewportHeight.current === 0) return;
+    const animated = landed.current;
+    landed.current = true;
+    const offset = height - viewportHeight.current;
+    if (offset > 0) list.current?.scrollToOffset({ offset, animated });
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.flex}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <ThreadPrimitive.MessagesFlatList
-        ref={list}
-        style={styles.flex}
-        contentContainerStyle={styles.messageList}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-        onLayout={readViewport}
-        onScroll={trackBottom}
-        onContentSizeChange={followEnd}
-      >
-        {() => <MessageBubble />}
-      </ThreadPrimitive.MessagesFlatList>
+    <View style={styles.flex}>
+      <LayoutAnimationConfig skipEntering>
+        <ThreadPrimitive.MessagesFlatList
+          ref={list}
+          style={styles.flex}
+          contentContainerStyle={styles.messageList}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          onLayout={readViewport}
+          onScrollBeginDrag={startDrag}
+          onScrollEndDrag={endDrag}
+          onMomentumScrollEnd={endMomentum}
+          onContentSizeChange={followEnd}
+        >
+          {() => <MessageBubble />}
+        </ThreadPrimitive.MessagesFlatList>
+      </LayoutAnimationConfig>
       <View style={styles.composer}>
         <Composer />
       </View>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 

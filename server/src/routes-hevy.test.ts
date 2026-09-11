@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { createHevyClient, type Workout, type WorkoutExercise, type WorkoutSet } from '@furkantanyol/hevy-client';
+import { createHevyClient, type Workout, type WorkoutExercise, type WorkoutSet } from 'hevy-sdk';
 import type { FastifyInstance } from 'fastify';
 import { describe, expect, it } from 'vitest';
 import type { CoachDeps } from './coach.js';
@@ -92,19 +92,21 @@ describe('GET /messages', () => {
     expect(messages).toEqual([
       expect.objectContaining({
         role: 'assistant',
-        text: "I'm your coach on top of Hevy. I've read your 2 workouts. A few questions, then I'll write your first block into Hevy.\n\nNew to Hevy, or been logging for a while?",
+        text: "I'm your coach on top of Hevy. I've read your 2 workouts, too few to read your habits from yet, so a few questions first, then I'll write your first block into Hevy.\n\nHow long have you been training?",
       }),
     ]);
   });
 
-  it('should offer the two starting points as choices under the opener', async () => {
+  it('should offer the years as choices under the opener when nothing is logged', async () => {
     const { app } = harness({}, hevyFetch([]));
 
     const messages = (await get(app, MESSAGES, appAuth)).json<Message[]>();
 
     expect(messages[0].choices).toEqual([
-      { label: 'New to Hevy', value: 'new' },
-      { label: 'Been logging', value: 'existing' },
+      { label: 'Less than a year', value: '<1' },
+      { label: '1 to 3 years', value: '1-3' },
+      { label: '3 to 5 years', value: '3-5' },
+      { label: '5 years or more', value: '5+' },
     ]);
   });
 

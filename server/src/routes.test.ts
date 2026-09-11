@@ -1,9 +1,10 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { createHevyClient } from '@furkantanyol/hevy-client';
+import { createHevyClient } from 'hevy-sdk';
 import type { FastifyBaseLogger, FastifyInstance } from 'fastify';
 import { describe, expect, it } from 'vitest';
 import type { CoachDeps } from './coach.js';
 import { buildApp, type Handlers, type RouteDeps } from './routes.js';
+import { NO_REPORT } from './progress.js';
 import { emptyState, type Message, type State } from './state.js';
 import { newMessage } from './thread.js';
 
@@ -89,9 +90,10 @@ const intake = { step: 'goals', answers: {} } as const;
 
 /** Stands in for the scripted intake: it appends the coach's next question the way the real one does. */
 const intakeReply: Partial<Handlers> = {
-  intakeReply: async (deps, text) => {
+  intakeReply: async (deps, text, _choice, report = NO_REPORT) => {
     deps.state.messages.push(newMessage('user', text));
     deps.state.messages.push(newMessage('assistant', 'How many days a week?'));
+    report.say('How many days a week?');
   },
 };
 

@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { createHevyClient } from '@furkantanyol/hevy-client';
+import { createHevyClient } from 'hevy-sdk';
 import type { FastifyBaseLogger, FastifyInstance } from 'fastify';
 import { describe, expect, it } from 'vitest';
 import type { CoachDeps, Review } from './coach.js';
@@ -15,7 +15,7 @@ const BAD_REQUEST = 400;
 const UNAUTHORIZED = 401;
 const NOT_CONFIGURED = 503;
 const WEBHOOK = '/webhook/hevy';
-const FIRST_DELIVERY = 'first hevy delivery';
+const DELIVERY_LOG = 'hevy delivery';
 const REDACTED = '[redacted]';
 const PUSH_TOKEN = 'ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]';
 const PUSH_TITLE = 'Review of your workout is ready';
@@ -105,8 +105,8 @@ function captureLogger(records: unknown[][]): FastifyBaseLogger {
   return logger;
 }
 
-function firstDeliveryLog(records: unknown[][]): { headers: Record<string, string> } | undefined {
-  const entry = records.find((args) => args[1] === FIRST_DELIVERY);
+function deliveryLog(records: unknown[][]): { headers: Record<string, string> } | undefined {
+  const entry = records.find((args) => args[1] === DELIVERY_LOG);
   return entry?.[0] as { headers: Record<string, string> } | undefined;
 }
 
@@ -181,13 +181,13 @@ describe('POST /webhook/hevy', () => {
     expect(saves()).toBe(0);
   });
 
-  it('should log the first delivery with the authorization header redacted', async () => {
+  it('should log every delivery with the authorization header redacted', async () => {
     const records: unknown[][] = [];
     const { app } = harness({ logger: captureLogger(records) });
 
     await post(app, WEBHOOK, delivery('e-1'), hookAuth);
 
-    expect(firstDeliveryLog(records)?.headers.authorization).toBe(REDACTED);
+    expect(deliveryLog(records)?.headers.authorization).toBe(REDACTED);
   });
 
   it('should push the review under the title the app shows', async () => {

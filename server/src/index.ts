@@ -1,8 +1,9 @@
 import { existsSync } from 'node:fs';
 import Anthropic from '@anthropic-ai/sdk';
-import { createHevyClient } from '@furkantanyol/hevy-client';
+import { createHevyClient } from 'hevy-sdk';
 import type { CoachDeps } from './coach.js';
 import { buildApp } from './routes.js';
+import { threadChanged } from './events.js';
 import { DEFAULT_STATE_PATH, loadState, saveState } from './state.js';
 
 const ENV_FILE = '.env';
@@ -32,7 +33,10 @@ const coach: CoachDeps = {
   anthropic: new Anthropic(),
   hevy,
   state,
-  save: () => saveState(DEFAULT_STATE_PATH, state),
+  save: async () => {
+    await saveState(DEFAULT_STATE_PATH, state);
+    threadChanged(state.messages.length);
+  },
   models: {
     plan: process.env.PLAN_MODEL || DEFAULT_PLAN_MODEL,
     chat: process.env.CHAT_MODEL || DEFAULT_CHAT_MODEL,

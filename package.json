@@ -12,7 +12,8 @@
     "validate": "pnpm lint && pnpm typecheck && pnpm --filter server validate",
     "ios:device": "expo run:ios --device",
     "ios:build": "eas build --profile development --platform ios --local --output ./build/hevycoach-dev.ipa",
-    "ios:install": "xcrun devicectl device install app --device \"$DEVICE_ID\" build/hevycoach-dev.ipa"
+    "ios:install": "xcrun devicectl device install app --device \"$DEVICE_ID\" build/hevycoach-dev.ipa",
+    "reset": "sh scripts/reset.sh"
   },
   "dependencies": {
     "@assistant-ui/react-native": "^0.1.40",
@@ -32,8 +33,10 @@
     "react": "19.2.3",
     "react-native": "0.86.3",
     "react-native-pager-view": "8.0.2",
+    "react-native-reanimated": "4.5.1",
     "react-native-safe-area-context": "~5.7.0",
-    "react-native-screens": "~4.26.0"
+    "react-native-screens": "~4.26.0",
+    "react-native-worklets": "0.10.1"
   },
   "devDependencies": {
     "@types/react": "~19.2.2",

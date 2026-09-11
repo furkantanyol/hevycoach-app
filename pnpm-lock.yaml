@@ -59,12 +59,18 @@ importers:
       react-native-pager-view:
         specifier: 8.0.2
         version: 8.0.2(react-native@0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.86.3(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.3))(react@19.2.3)
+      react-native-reanimated:
+        specifier: 4.5.1
+        version: 4.5.1(react-native-worklets@0.10.1(@babel/core@7.29.7)(@react-native/metro-config@0.86.3(@babel/core@7.29.7))(react-native@0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.86.3(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.3))(react@19.2.3))(react-native@0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.86.3(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.3))(react@19.2.3)
       react-native-safe-area-context:
         specifier: ~5.7.0
         version: 5.7.0(react-native@0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.86.3(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.3))(react@19.2.3)
       react-native-screens:
         specifier: ~4.26.0
         version: 4.26.2(react-native@0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.86.3(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.3))(react@19.2.3)
+      react-native-worklets:
+        specifier: 0.10.1
+        version: 0.10.1(@babel/core@7.29.7)(@react-native/metro-config@0.86.3(@babel/core@7.29.7))(react-native@0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.86.3(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.3))(react@19.2.3)
     devDependencies:
       '@types/react':
         specifier: ~19.2.2
@@ -84,15 +90,15 @@ importers:
       '@anthropic-ai/sdk':
         specifier: ^0.124.0
         version: 0.124.0(zod@4.5.4)
-      '@furkantanyol/hevy-client':
-        specifier: 1.0.0
-        version: 1.0.0
       expo-server-sdk:
         specifier: ^7.2.0
         version: 7.2.0
       fastify:
         specifier: ^5.12.3
         version: 5.12.3
+      hevy-sdk:
+        specifier: 1.0.0
+        version: 1.0.0
     devDependencies:
       '@types/node':
         specifier: ^26.5.0
@@ -964,10 +970,6 @@ packages:
 
   '@fastify/proxy-addr@5.1.0':
     resolution: {integrity: sha512-INS+6gh91cLUjB+PVHfu1UqcB76Sqtpyp7bnL+FYojhjygvOPA9ctiD/JDKsyD9Xgu4hUhCSJBPig/w7duNajw==}
-
-  '@furkantanyol/hevy-client@1.0.0':
-    resolution: {integrity: sha512-7gTDhZuh55nJOhvEjlgOdCBPkw3tF/VAKaJGy0/CAT8DaG0Sn+ykjAzk83t2vK9WPQH5CBm4ChHzbCIR1L/JuA==}
-    engines: {node: '>=20'}
 
   '@humanfs/core@0.19.2':
     resolution: {integrity: sha512-UhXNm+CFMWcbChXywFwkmhqjs3PRCmcSa/hfBgLIb7oQ5HNb1wS0icWsGtSAUNgefHeI+eBrA8I1fxmbHsGdvA==}
@@ -2905,6 +2907,10 @@ packages:
 
   hermes-parser@0.36.1:
     resolution: {integrity: sha512-GApNk4zLHi2UWoWZZkx7LNCOSzLSc5lB55pZ/PhK7ycFeg7u5LcF88p/WbpIi1XUDtE0MpHE3uRR3u3KB7TjSQ==}
+
+  hevy-sdk@1.0.0:
+    resolution: {integrity: sha512-cW/uXBu9Ke5qOqeRnYHKYI3cwh11Ag2sO04AffC4x+mXWMlTb9upyqyG852phEz4A+Zcxh/ZPCtrsCIeuzG2Lg==}
+    engines: {node: '>=20'}
 
   hoist-non-react-statics@3.3.2:
     resolution: {integrity: sha512-/gGivxi8JPKWNm/W0jSmzcMPpfpPLc3dY/6GxhX2hQ9iGj3aDfklV4ET7NjKpSinLpJ5vafa9iiGIEZg10SfBw==}
@@ -5756,8 +5762,6 @@ snapshots:
       '@fastify/forwarded': 3.0.2
       ipaddr.js: 2.5.0
 
-  '@furkantanyol/hevy-client@1.0.0': {}
-
   '@humanfs/core@0.19.2':
     dependencies:
       '@humanfs/types': 0.15.0
@@ -7932,6 +7936,8 @@ snapshots:
   hermes-parser@0.36.1:
     dependencies:
       hermes-estree: 0.36.1
+
+  hevy-sdk@1.0.0: {}
 
   hoist-non-react-statics@3.3.2:
     dependencies:
